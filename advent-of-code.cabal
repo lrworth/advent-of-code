@@ -1,0 +1,97 @@
+cabal-version: 3.0
+
+name:           advent-of-code
+version:        2020
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+common shared
+  default-extensions:
+    AllowAmbiguousTypes
+    ApplicativeDo
+    BangPatterns
+    BlockArguments
+    DataKinds
+    DeriveFoldable
+    DeriveFunctor
+    DeriveGeneric
+    DeriveTraversable
+    EmptyCase
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTs
+    GeneralizedNewtypeDeriving
+    ImplicitParams
+    KindSignatures
+    LambdaCase
+    MonadComprehensions
+    MultiParamTypeClasses
+    MultiWayIf
+    NumDecimals
+    OverloadedLabels
+    PartialTypeSignatures
+    PatternGuards
+    PatternSynonyms
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeInType
+    TypeOperators
+    UndecidableInstances
+    ViewPatterns
+
+  ghc-options: -Wall -Wcompat -Wno-partial-type-signatures -Wredundant-constraints
+  build-depends: 
+      base >=4.7 && <5
+    , mtl
+
+library
+  import: shared
+  exposed-modules:
+      AOC.Day1
+      AOC.Day2
+      AOC.Day3
+  hs-source-dirs:
+      src
+  build-depends:
+    , aeson
+    , ansi-terminal
+    , array
+    , bytestring
+    , containers
+    , criterion
+    , data-default-class
+    , deepseq
+    , directory
+    , filepath
+    , finite-typelits
+    , haskeline
+    , haskell-names
+    , haskell-src-exts
+    , hpack
+    , lens
+    , megaparsec
+    , microlens-th
+    , mtl
+    , pandoc
+    , parser-combinators
+    , profunctors
+    , raw-strings-qq
+    , split
+    , template-haskell
+    , text
+    , th-abstraction
+    , time
+    , transformers
+    , vector
+    , yaml
+  default-language: Haskell2010
+
