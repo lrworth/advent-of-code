@@ -48,7 +48,20 @@ solveA preambleSize i =
           else pure x
    in evalState (go nums) (Seq.fromList seed)
 
-solutionA = solveA 25 input
+betterSolveA :: Int -> String -> Int
+betterSolveA size =
+  head
+    . catMaybes
+    . fmap
+      ( (\(sums, mx) -> mx >>= \x -> if x `elem` sums then Nothing else Just x)
+          . (pairSums *** listToMaybe)
+          . L.splitAt size
+      )
+    . L.tails
+    . fmap read
+    . lines
+
+solutionA = betterSolveA 25 input
 
 ranges :: [Int] -> [[Int]]
 ranges = L.filter (not . L.null) . L.tails <=< L.inits
