@@ -53,13 +53,14 @@ solutionA = solveA 25 input
 ranges :: [Int] -> [[Int]]
 ranges = L.filter (not . L.null) . L.tails <=< L.inits
 
-rangeSums :: [Int] -> [(Int, Int, Int)]
-rangeSums = fmap (\xs -> (L.sum xs, L.minimum xs, L.maximum xs)) . ranges
+rangeSums :: [Int] -> [(Int, (Int, Int))]
+rangeSums = fmap (L.sum &&& (L.minimum &&& L.maximum)) . ranges
 
 solutionB =
-  (\(_, l, h) -> l + h)
+  uncurry (+)
+    . snd
     . head
-    . L.filter (\(x, _, _) -> x == solutionA)
+    . L.filter ((== solutionA) . fst)
     . rangeSums
     . fmap read
     . lines
