@@ -56,9 +56,6 @@ common shared
 library
   import: shared
   exposed-modules:
-      AOC.Day1
-      AOC.Day2
-      AOC.Day3
   hs-source-dirs:
       src
   build-depends:
