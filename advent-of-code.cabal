@@ -78,6 +78,7 @@ library
     , megaparsec
     , microlens-th
     , mtl
+    , numeric-prelude
     , pandoc
     , parser-combinators
     , profunctors
