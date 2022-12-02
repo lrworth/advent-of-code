@@ -11,7 +11,15 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.idris2 pkgs.rlwrap ];
+          packages = with pkgs; [
+            cabal-install
+            haskell.compiler.ghc942
+            haskell-language-server
+            haskell.packages.ghc942.haskell-language-server
+            ormolu
+            idris2
+            rlwrap
+          ];
         };
       }
     );
