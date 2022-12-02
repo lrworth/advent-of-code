@@ -12,25 +12,27 @@ import Data.List1
 maximum : Ord m => List1 m -> m
 maximum = foldl1 ((<+>) @{Maximum})
 
-data Error = Fe FileError | O
+data Error = EFileError FileError | EParseError
 
-readGroups : (HasIO m) => String -> EitherT Error m (List1 (List Nat))
+Show Error where
+  show (EFileError fe) = "EFileError " ++ show fe
+  show EParseError = "EParseError"
+
+readGroups : (HasIO m, MonadError Error m) => String -> m (List1 (List Nat))
 readGroups fileName = do
-  c <- liftEither . mapFst Fe =<< lift (readFile fileName)
-  let lines = split (== "") $ lines c
-      nums : Maybe (List1 (List Nat))
-      nums = traverse (traverse parsePositive) lines
-  MkEitherT $ pure $ maybeToEither O $ traverse (traverse parsePositive) lines
+  eContents <- liftIO (readFile fileName)
+  contents <- liftEither . mapFst EFileError $ eContents
+  liftEither . maybeToEither EParseError . traverse (traverse parsePositive) . split (== "") . lines $ contents
 
 part1 : IO ()
 part1 = do
-  Right groups <- runEitherT $ readGroups "real.txt"
-    | Left e => printLn "oops"
+  Right groups <- runEitherT $ readGroups {m = _ Error IO} "real.txt"
+    | Left e => printLn e
   printLn . maximum $ sum <$> groups
 
 part2 : IO ()
 part2 = do
-  Right groups <- runEitherT $ readGroups "real.txt"
-    | Left e => printLn "oops"
+  Right groups <- runEitherT $ readGroups {m = _ Error IO} "real.txt"
+    | Left e => printLn e
   printLn . sum . List.take 3 . List.reverse . List.sort . toList $ sum <$> groups
 
