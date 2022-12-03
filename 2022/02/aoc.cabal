@@ -1,0 +1,19 @@
+cabal-version:   3.0
+name:            aoc
+version:         0.1.0.0
+license:         BSD-2-Clause
+license-file:    LICENSE
+author:          Luke Worth
+maintainer:      luke.worth@bellroy.com
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  MyLib
+    build-depends:    base ^>=4.17.0.0
+    hs-source-dirs:   src
+    default-language: GHC2021
