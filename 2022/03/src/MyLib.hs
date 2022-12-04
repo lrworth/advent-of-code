@@ -3,9 +3,13 @@
 
 module MyLib where
 
+import Control.Exception (assert)
 import Control.Monad (guard)
 import Data.Foldable (find)
 import Data.List (group, nub, sort)
+import Data.Proxy (Proxy (..))
+import Data.Vector.Fixed (Arity, VecList, convert, fromListM)
+import GHC.TypeLits (Nat, natVal)
 import Numeric.Natural
 import System.IO (readFile')
 
@@ -58,17 +62,24 @@ elfGroupTripleItem (ElfGroup (as, bs, cs)) =
     . sort
     $ nub as ++ nub bs ++ nub cs
 
+splitInto :: Arity n => Proxy (n :: Nat) -> [a] -> [VecList n a]
+splitInto proxy l =
+  let splitSize = fromEnum $ natVal proxy
+      (front, back) = splitAt splitSize l
+   in case fromListM front of
+        Nothing -> assert (null back) []
+        Just frontVec -> frontVec : splitInto proxy back
+
 parseElfGroups :: String -> Maybe [ElfGroup]
-parseElfGroups = go . lines
+parseElfGroups = traverse parseElfGroup . splitInto (Proxy :: Proxy 3) . lines
   where
-    go :: [String] -> Maybe [ElfGroup]
-    go (a : b : c : rest) = do
-      a' <- traverse mkItem a
-      b' <- traverse mkItem b
-      c' <- traverse mkItem c
-      rest' <- go rest
-      pure $ ElfGroup (a', b', c') : rest'
-    go _ = pure []
+    parseElfGroup :: VecList 3 String -> Maybe ElfGroup
+    parseElfGroup vl = case convert vl of
+      (a, b, c) -> do
+        a' <- traverse mkItem a
+        b' <- traverse mkItem b
+        c' <- traverse mkItem c
+        pure $ ElfGroup (a', b', c')
 
 part2 :: IO (Maybe Natural)
 part2 = do
