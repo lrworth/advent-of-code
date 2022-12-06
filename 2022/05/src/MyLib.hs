@@ -91,7 +91,12 @@ part1 = do
   s <- readFile' "real.txt"
   Just Input {..} <- pure $ parseInput s
   Just finalStacks <- pure $ execStateT (traverse step procedure) stacks
-  pure $ (\(Stack (Crate c : _)) -> c) <$> M.elems finalStacks
+  traverse
+    ( \stack -> do
+        Stack (Crate c : _) <- pure stack
+        pure c
+    )
+    $ M.elems finalStacks
 
 step2 :: Instruction -> StateT (Map Int Stack) Maybe ()
 step2 Instruction {..} = do
@@ -109,4 +114,9 @@ part2 = do
   s <- readFile' "real.txt"
   Just Input {..} <- pure $ parseInput s
   Just finalStacks <- pure $ execStateT (traverse step2 procedure) stacks
-  pure $ (\(Stack (Crate c : _)) -> c) <$> M.elems finalStacks
+  traverse
+    ( \stack -> do
+        Stack (Crate c : _) <- pure stack
+        pure c
+    )
+    $ M.elems finalStacks
