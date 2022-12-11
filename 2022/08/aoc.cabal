@@ -1,0 +1,27 @@
+cabal-version: 3.0
+name:          aoc
+version:       0.1.0.0
+license:       BSD-2-Clause
+maintainer:    luke.worth@bellroy.com
+author:        Luke Worth
+build-type:    Simple
+
+library
+  exposed-modules:  Aoc
+  hs-source-dirs:   src
+  default-language: GHC2021
+  ghc-options:      -Wall
+  build-depends:
+    , base                  ^>=4.17.0.0
+    , containers
+    , fixed-vector
+    , generic-lens
+    , hoist-error
+    , lens
+    , megaparsec
+    , monoidal-containers
+    , mtl
+    , pretty-show
+    , unordered-containers
+    , vector
+    , witherable
