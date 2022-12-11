@@ -63,16 +63,16 @@ elfGroupTripleItem (ElfGroup (as, bs, cs)) =
     . sort
     $ nub as ++ nub bs ++ nub cs
 
-splitInto :: Arity n => Proxy (n :: Nat) -> [a] -> [VecList n a]
-splitInto proxy l =
-  let splitSize = fromEnum $ natVal proxy
+splitInto :: forall (n :: Nat) a. Arity n => [a] -> [VecList n a]
+splitInto l =
+  let splitSize = fromEnum $ natVal @n Proxy
       (front, back) = splitAt splitSize l
    in case fromListM front of
         Nothing -> assert (null back) []
-        Just frontVec -> frontVec : splitInto proxy back
+        Just frontVec -> frontVec : splitInto back
 
 parseElfGroups :: String -> Maybe [ElfGroup]
-parseElfGroups = traverse parseElfGroup . splitInto (Proxy :: Proxy 3) . lines
+parseElfGroups = traverse parseElfGroup . splitInto . lines
   where
     parseElfGroup :: VecList 3 String -> Maybe ElfGroup
     parseElfGroup vl = case convert vl of
