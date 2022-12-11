@@ -13,7 +13,7 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.Data
 import Data.Generics.Labels ()
-import Data.List (isPrefixOf, sort)
+import Data.List (find, isPrefixOf, sort)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NEL
 import qualified Data.Map as M
@@ -22,8 +22,6 @@ import Data.Monoid
 import GHC.Generics hiding (to)
 import System.IO (readFile')
 import Text.Read (readMaybe)
-import Text.Show.Pretty
-import Witherable
 
 data NodeType = Dir | File Int
   deriving (Show)
@@ -66,11 +64,6 @@ data FsNode = FNDir (M.Map String FsNode) | FNFile Int
 
 instance Plated FsNode
 
-foldMapFsNode :: Monoid m => (String -> FsNode -> m) -> (Int -> m) -> FsNode -> m
-foldMapFsNode onDir onFile = \case
-  FNDir m -> M.foldMapWithKey onDir m
-  FNFile i -> onFile i
-
 unionFsNodes :: FsNode -> FsNode -> Maybe FsNode
 unionFsNodes (FNDir map1) (FNDir map2) =
   FNDir
@@ -83,10 +76,17 @@ unionFsNodes (FNDir map1) (FNDir map2) =
 unionFsNodes _ _ = Nothing
 
 bury :: [String] -> FsNode -> FsNode
-bury = appEndo . foldMap (\p -> Endo $ FNDir . M.singleton p) . reverse
+bury = appEndo . foldMap (\p -> Endo $ FNDir . M.singleton p)
 
 fsDirSize :: M.Map String FsNode -> Int
-fsDirSize fd = getSum $ foldMap (Sum . \case FNDir m -> fsDirSize m; FNFile s -> s) fd
+fsDirSize =
+  getSum
+    . foldMap
+      ( Sum
+          . \case
+            FNDir m -> fsDirSize m
+            FNFile s -> s
+      )
 
 data Learning = Learning
   { pwd :: [String],
@@ -117,7 +117,7 @@ execCommand = \case
   Ls entries -> do
     fs <- use #fileSystem
     p <- use #pwd
-    newFs <- unionFsNodes fs (bury p $ fsNodeFromDirEntries entries) <?> Conflict
+    newFs <- unionFsNodes fs (bury (reverse p) $ fsNodeFromDirEntries entries) <?> Conflict
     assign #fileSystem newFs
 
 readFileSystem :: FilePath -> IO FsNode
@@ -145,5 +145,12 @@ part1 = do
 
 part2 :: IO Int
 part2 = do
-  input <- readFile' "real.txt"
-  undefined
+  fileSystem <- readFileSystem "real.txt"
+  FNDir root <- pure fileSystem
+  let totalSpace = 70000000
+      neededSpace = 30000000
+      usedSpace = fsDirSize root
+      freeSpace = totalSpace - usedSpace
+      removeAtLeast = neededSpace - freeSpace
+  Just s <- pure . find (>= removeAtLeast) . sort $ fileSystem & toListOf (cosmos . #_FNDir . to fsDirSize)
+  pure s
