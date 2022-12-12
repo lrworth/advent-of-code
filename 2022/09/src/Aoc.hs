@@ -6,6 +6,7 @@
 
 module Aoc where
 
+import Control.Arrow
 import Control.Exception (assert)
 import Control.Lens
 import Control.Monad.Error.Hoist
@@ -97,4 +98,53 @@ part1 = do
                   is
               )
               Rope {head = (0, 0), tail = (0, 0)}
+        )
+
+newtype LongRope = LongRope (NonEmpty (Int, Int))
+  deriving (Show)
+
+tailForce :: (Int, Int) -> (Int, Int) -> (Int, Int)
+tailForce (hx, hy) (tx, ty) =
+  if abs (hx - tx) >= 2 || abs (hy - ty) >= 2
+    then (signum (hx - tx), signum (hy - ty))
+    else (0, 0)
+
+moveDirectionLong :: Direction -> LongRope -> LongRope
+moveDirectionLong direction (LongRope nel) =
+  LongRope $
+    moveDirectionLong'
+      ( case direction of
+          Up -> (0, 1)
+          Down -> (0, -1)
+          Left -> (-1, 0)
+          Right -> (1, 0)
+      )
+      nel
+  where
+    moveDirectionLong' :: (Int, Int) -> NonEmpty (Int, Int) -> NonEmpty (Int, Int)
+    moveDirectionLong' offset (head :| tail) =
+      let newHead = (getSum *** getSum $ bimap Sum Sum head <> bimap Sum Sum offset)
+       in newHead :| case NEL.nonEmpty tail of
+            Just tailNE@(subHead :| _) -> NEL.toList $ moveDirectionLong' (tailForce newHead subHead) tailNE
+            Nothing -> []
+
+applyDirectionLong :: (MonadState LongRope m, MonadWriter (Set (Int, Int)) m) => Direction -> m ()
+applyDirectionLong direction = do
+  modify $ moveDirectionLong direction
+  tell . Set.singleton =<< gets (\(LongRope nel) -> NEL.last nel)
+
+part2 :: IO Int
+part2 = do
+  is <- readInstructions "real.txt"
+  Just startRope <- pure . fmap LongRope . NEL.nonEmpty $ replicate 10 (0, 0)
+  Set.size
+    <$> ( execWriterT $
+            runStateT
+              ( traverse
+                  ( \Instruction {..} ->
+                      replicateM distance $ applyDirectionLong direction
+                  )
+                  is
+              )
+              startRope
         )
