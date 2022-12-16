@@ -1,0 +1,58 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE RecordWildCards #-}
+
+module Aoc where
+
+import Control.Arrow
+import Control.Exception (assert)
+import Control.Lens
+import Control.Monad.Error.Hoist
+import Control.Monad.Except
+import Control.Monad.RWS
+import Control.Monad.Reader
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as ByteString
+import Data.Data
+import Data.Foldable
+import Data.Generics.Labels ()
+import Data.List (find, isPrefixOf, mapAccumL, sort, span, tails, transpose)
+import Data.List.NonEmpty (NonEmpty ((:|)))
+import qualified Data.List.NonEmpty as NEL
+import Data.List.Split (chunksOf, splitOn)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (mapMaybe, maybeToList)
+import Data.Semigroup
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Word ()
+import Debug.Trace
+import GHC.Generics hiding (to)
+import Numeric.Natural (Natural)
+import System.IO (readFile')
+import Text.Read (readMaybe)
+import Text.Show.Pretty
+import Prelude hiding (Left, Right, head, tail)
+
+data Packet = PList [Packet] | PInt Int
+
+instance Aeson.FromJSON Packet where
+  parseJSON = \case
+    Aeson.Array a -> pure $ PList $ Aeson.parseJSON <$> toList a
+    Aeson.Number n -> _
+    _ -> error "wrong"
+
+readPacketPairsFile :: String -> IO [(Packet, Packet)]
+readPacketPairsFile path = do
+  packetPairsRaw <- chunksOf 3 . ByteString.split 10 <$> ByteString.readFile path
+  let readPacketPair raw = do
+        [a, b, _] <- pure raw
+        [a', b'] <- traverse Aeson.decode' [a, b]
+        pure (a', b')
+  Just x <- pure $ traverse readPacketPair packetPairsRaw
+  pure x
