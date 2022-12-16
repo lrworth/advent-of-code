@@ -57,7 +57,7 @@ newtype Height = Height Char
 data Puzzle = Puzzle
   { start :: Coordinates,
     end :: Coordinates,
-    grid :: Map Coordinates Height
+    heightMap :: Map Coordinates Height
   }
   deriving (Show)
 
@@ -78,7 +78,7 @@ readPuzzleFile path = do
             ls
   Just (start, _) <- pure $ find (\(_, ch) -> ch == 'S') labelledInput
   Just (end, _) <- pure $ find (\(_, ch) -> ch == 'E') labelledInput
-  let grid =
+  let heightMap =
         Map.fromList $
           fmap
             ( fmap
@@ -132,5 +132,34 @@ distancesFrom heightMap start = shrinkWrap . Map.insert start (Distance 0) $ Dis
 part1 :: IO Distance
 part1 = do
   Puzzle {..} <- readPuzzleFile "real.txt"
-  Just d <- pure . Map.lookup end $ distancesFrom grid start
+  Just d <- pure . Map.lookup end $ distancesFrom heightMap start
   pure d
+
+distancesTo :: Map Coordinates Height -> Coordinates -> Map Coordinates Distance
+distancesTo heightMap end = shrinkWrap . Map.insert end (Distance 0) $ Distance (Map.size heightMap) <$ heightMap
+  where
+    shrinkWrap :: Map Coordinates Distance -> Map Coordinates Distance
+    shrinkWrap initial =
+      let surroundingReachableDistances :: Coordinates -> [Distance]
+          surroundingReachableDistances coordinates = do
+            Just height <- pure $ Map.lookup coordinates heightMap
+            adjacent <- [goLeft, goRight, goUp, goDown] ?? coordinates
+            Just adjacentHeight <- pure $ Map.lookup adjacent heightMap
+            guard $ adjacentHeight <= succ height
+            Just adjacentDistance <- pure $ Map.lookup adjacent initial
+            pure adjacentDistance
+          shrink :: Coordinates -> Distance -> Distance
+          shrink coordinates distance =
+            minimum $ distance : (succ <$> surroundingReachableDistances coordinates)
+          shrunk = Map.mapWithKey shrink initial
+       in if initial == shrunk then initial else shrinkWrap shrunk
+
+part2 :: IO Distance
+part2 = do
+  Puzzle {..} <- readPuzzleFile "real.txt"
+  pure
+    . minimum
+    . Map.elems
+    . Map.restrictKeys (distancesTo heightMap end)
+    . Map.keysSet
+    $ Map.filter (== Height 'a') heightMap

@@ -12,11 +12,10 @@ library
   default-language: GHC2021
   ghc-options:      -Wall
   build-depends:
-    , base                  ^>=4.17.0.0
+    , base                 ^>=4.17.0.0
     , containers
     , fixed-vector
     , generic-lens
-    , hashable
     , hoist-error
     , lens
     , megaparsec
@@ -24,6 +23,5 @@ library
     , mtl
     , pretty-show
     , split
-    , unordered-containers
     , vector
     , witherable
