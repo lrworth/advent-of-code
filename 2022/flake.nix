@@ -13,9 +13,9 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             cabal-install
-            haskell.compiler.ghc942
-            haskell.packages.ghc942.cabal-fmt
-            haskell.packages.ghc942.haskell-language-server
+            haskell.compiler.ghc924
+            haskell.packages.ghc924.cabal-fmt
+            haskell.packages.ghc924.haskell-language-server
             ormolu
             idris2
             rlwrap

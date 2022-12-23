@@ -5,43 +5,44 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Redundant lambda" #-}
 
 module Aoc where
 
 import Control.Arrow
 import Control.Exception (assert)
-import Control.Lens
 import Control.Monad.Error.Hoist
 import Control.Monad.Except
 import Control.Monad.RWS
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
-import qualified Data.Aeson as Aeson
+import Data.Aeson qualified as Aeson
 import Data.Bitraversable
-import qualified Data.ByteString.Lazy as ByteString
+import Data.ByteString.Lazy qualified as ByteString
 import Data.Char
 import Data.Data
 import Data.Foldable
 import Data.Generics.Labels ()
-import qualified Data.Graph as Graph
+import Data.Graph qualified as Graph
 import Data.List (find, intercalate, intersperse, isPrefixOf, mapAccumL, sort, sortBy, span, tail, tails, transpose)
-import qualified Data.List as List
+import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import qualified Data.List.NonEmpty as NEL
+import Data.List.NonEmpty qualified as NEL
 import Data.List.Split (chunksOf, splitOn)
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
 import Data.Semigroup
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Tree (Tree)
-import qualified Data.Tree as Tree
+import Data.Tree qualified as Tree
 import Data.Void
 import Data.Word ()
 import Debug.Trace
-import GHC.Generics hiding (to)
 import Numeric.Natural (Natural)
 import System.IO (readFile')
 import Text.Read (readMaybe)
@@ -86,100 +87,78 @@ readValveFile path = do
   Just valves <- pure . fmap mconcat $ traverse parseValveLine ls
   pure valves
 
-{- This is too slow.
-
-data Action = Move Valve | Open
-  deriving (Show, Ord, Eq)
-
-data Step = Step
-  { action :: Action,
-    -- After the action has been performed, what valves are open?
-    openValves :: Set Valve,
-    nextSteps :: [Step]
-  }
-  deriving (Show)
-
-solutionSpace :: Map Valve ValveData -> Valve -> Set Valve -> [Step]
-solutionSpace valves valve openValves =
-  let ValveData {tunnels, flowRate} = valves Map.! valve
-   in ( \action ->
-          let newOpenValves = case action of
-                Move _ -> openValves
-                Open -> Set.insert valve openValves
-              nextValve = case action of
-                Move v -> v
-                Open -> valve
-              nextSteps = solutionSpace valves nextValve newOpenValves
-           in Step
-                { action,
-                  openValves = newOpenValves,
-                  nextSteps
-                }
-      )
-        <$> ( (if Set.member valve openValves || flowRate == 0 then [] else [Open])
-                ++ (Move <$> tunnels)
-            )
-
-pruneAfterDepth :: Int -> Step -> Step
-pruneAfterDepth n s@Step {nextSteps} =
-  s
-    { nextSteps =
-        if n <= 1
-          then []
-          else fmap (pruneAfterDepth (n - 1)) nextSteps
-    }
-
-pruneUselessMoves :: Set Valve -> Step -> Step
-pruneUselessMoves contiguousMoves s@Step {action, nextSteps} =
-  s
-    { nextSteps =
-        case action of
-          Open -> pruneUselessMoves Set.empty <$> nextSteps
-          Move v ->
-            if Set.member v contiguousMoves
-              then []
-              else pruneUselessMoves (Set.insert v contiguousMoves) <$> nextSteps
-    }
-
-pruneTrailingMoves :: Step -> Maybe Step
-pruneTrailingMoves s@Step {action, nextSteps} =
-  case action of
-    Move _ ->
-      if List.null nextSteps
-        then Nothing
+distance :: Map Valve ValveData -> Valve -> Valve -> Int
+distance valveMap from to = bfs 0 [from]
+  where
+    bfs d vs =
+      if to `elem` vs
+        then d
         else
-          let ns = catMaybes $ pruneTrailingMoves <$> nextSteps
-           in if List.null ns then Nothing else Just s {nextSteps = ns}
-    Open ->
-      Just $
-        s {nextSteps = catMaybes $ pruneTrailingMoves <$> nextSteps}
+          let newVs = do
+                v <- vs
+                let ValveData {tunnels} = valveMap Map.! v
+                tunnels
+           in bfs (succ d) newVs
 
-allBranches :: Step -> [[Action]]
-allBranches Step {action, nextSteps} = do
-  if List.null nextSteps
-    then [[action]]
-    else do
-      rest <- allBranches <$> nextSteps
-      (action :) <$> rest
+totalFlowRate :: Map Valve ValveData -> Set Valve -> Int
+totalFlowRate valveMap =
+  sum
+    . fmap (\v -> flowRate $ valveMap Map.! v)
+    . toList
 
-evaluatePath :: Int -> Map Valve ValveData -> Valve -> [Action] -> Int
-evaluatePath _ _ _ [] = 0
-evaluatePath timeRemaining valves valve (action : path) =
-  let ValveData {flowRate} = valves Map.! valve
-   in if timeRemaining == 0
-        then 0
-        else case action of
-          Open -> flowRate * (timeRemaining - 1) + evaluatePath (timeRemaining - 1) valves valve path
-          Move v -> evaluatePath (timeRemaining - 1) valves v path
+annotate :: Show a => String -> a -> a
+annotate s a = traceShow (s <> ": " <> show a) a
+
+cost :: Map Valve ValveData -> Valve -> Set Valve -> Set Valve -> Int
+cost valveMap v goalVs = \avoid ->
+  let thisFlowRate = flowRate $ valveMap Map.! v
+   in -- annotate (show v <> ", " <> show goalVs) $
+      if Set.null goalVs
+        then thisFlowRate
+        else
+          minimum . fmap snd $
+            -- Cost of opening the current valve then traversing everything
+            toList
+              ( Set.map
+                  ( \goalV ->
+                      let remaining = Set.delete goalV goalVs
+                       in ( goalV,
+                            thisFlowRate
+                              + ((1 + distance valveMap v goalV) * totalFlowRate valveMap goalVs)
+                              + cost
+                                valveMap
+                                goalV
+                                remaining
+                                avoid
+                          )
+                  )
+                  goalVs
+              )
+              -- Cost of skipping the current valve and traversing from somewhere else
+              ++ catMaybes
+                ( toList
+                    ( Set.map
+                        ( \goalV ->
+                            if Set.member goalV avoid
+                              then Nothing
+                              else
+                                Just $
+                                  let remaining = Set.delete goalV $ Set.insert v goalVs
+                                   in ( goalV,
+                                        distance valveMap v goalV * totalFlowRate valveMap (Set.insert v goalVs)
+                                          + cost
+                                            valveMap
+                                            goalV
+                                            remaining
+                                            (Set.insert v avoid)
+                                      )
+                        )
+                        goalVs
+                    )
+                )
 
 part1 :: IO Int
 part1 = do
-  valveMap <- readValveFile "real.txt"
-  print
-    . fmap (\a -> (evaluatePath 30 valveMap (Valve "AA") a, a))
-    . concat
-    . fmap allBranches
-    . catMaybes
-    $ pruneTrailingMoves . pruneUselessMoves Set.empty . pruneAfterDepth 6 <$> solutionSpace valveMap (Valve "AA") Set.empty
-  undefined
--}
+  valveMap <- readValveFile "sample.txt"
+  let absoluteFlowRate = 30 * sum (flowRate <$> Map.elems valveMap)
+  pure $ absoluteFlowRate - cost valveMap (Valve "AA") (Set.delete (Valve "AA") $ Map.keysSet valveMap) Set.empty
