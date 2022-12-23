@@ -1,3 +1,3 @@
-Valve A has flow rate=2; tunnel leads to valve C
-Valve B has flow rate=10; tunnels lead to valves C, A
-Valve C has flow rate=20; tunnels lead to valves B
+Valve AA has flow rate=2; tunnel leads to valve CC
+Valve BB has flow rate=10; tunnels lead to valves CC, AA
+Valve CC has flow rate=20; tunnels lead to valves BB
