@@ -1,0 +1,37 @@
+cabal-version: 3.0
+name:          aoc
+version:       0.1.0.0
+license:       BSD-2-Clause
+maintainer:    luke.worth@bellroy.com
+author:        Luke Worth
+build-type:    Simple
+
+library
+  exposed-modules:  Aoc
+  hs-source-dirs:   src
+  default-language: GHC2021
+  ghc-options:      -Wall -fobject-code -O
+  mixins:
+    base hiding (Prelude),
+    relude (Relude as Prelude),
+    relude
+
+  build-depends:
+    , aeson
+    , base                 ^>=4.16.0.0
+    , bytestring
+    , containers
+    , fixed-vector
+    , generic-lens
+    , hoist-error
+    , lens
+    , megaparsec
+    , MemoTrie
+    , monoidal-containers
+    , mtl
+    , pretty-show
+    , regex-applicative
+    , relude
+    , split
+    , vector
+    , witherable
