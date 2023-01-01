@@ -27,7 +27,7 @@ import Data.Data
 import Data.Foldable
 import Data.Generics.Labels ()
 import Data.Graph qualified as Graph
-import Data.List (find, intercalate, intersperse, isPrefixOf, mapAccumL, sort, sortBy, span, tail, tails, transpose)
+import Data.List (find, head, intercalate, intersperse, isPrefixOf, mapAccumL, sort, sortBy, span, tail, tails, transpose)
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NEL
@@ -35,6 +35,7 @@ import Data.List.Split (chunksOf, splitOn)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
+import Data.Ord (comparing)
 import Data.Semigroup
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -87,112 +88,161 @@ readValveFile path = do
   Just valves <- pure . fmap mconcat $ traverse parseValveLine ls
   pure valves
 
-distance :: Map Valve ValveData -> Valve -> Valve -> State S Int
-distance valveMap from to = do
-  dM <- gets $ Map.lookup (from, to) . distanceMemo
-  case dM of
-    Just d -> pure d
-    Nothing -> do
-      let d = bfs 0 [from]
-      modify $ \s -> s {distanceMemo = Map.insert (from, to) d $ distanceMemo s}
-      pure d
+{- We can use Floyd-Warshall, but what path are we minimising?
+    If we say the graph is actually the state space, and edges are the valid state transitions:
+    - states are all the locations (being there) and all combinations of valves being turned on and off while we travel. There are far too many of these to store in a table like described in the Wikipedia article, but we might be able to store a sparse map (or even a function (state x state -> value))
+
+  Perhaps iterative deepening (https://en.wikipedia.org/wiki/Iterative_deepening_A*) ?
+  - Where the cost estimate only considers the node and the goal.
+
+---
+  Two stages:
+  1. Calculate travel distance between all nodes so it can be looked-up.
+  2. Iterative deepening:
+      - From AA to each node. Store the most valuable path with each node.
+      - From each node, calculate shortest path to each other node, except
+-}
+-- shortestPath :: Valve -> Valve -> Set Valve -> Integer
+-- shortestPath i j ks =
+--  case Set.minView ks of
+--    Just (k, kmo) -> min (shortestPath i j kmo) (shortestPath i k kmo + shortestPath k j kmo)
+--    Nothing -> cost i j
+
+edges :: Map Valve ValveData -> [(Valve, Valve)]
+edges =
+  concatMap (\(v, ValveData {tunnels}) -> fmap (v,) tunnels)
+    . Map.assocs
+
+newtype DistanceTable = DistanceTable (Map (Valve, Valve) Int)
+  deriving (Show)
+
+-- Floyd-Warshall algorithm.
+mkDistanceTable :: Map Valve ValveData -> DistanceTable
+mkDistanceTable valveMap = DistanceTable . (`execState` Map.empty) $ do
+  forM_ (edges valveMap) $ \(u, v) ->
+    modify' $ Map.insert (u, v) 1
+  forM_ valves $ \v ->
+    modify' $ Map.insert (v, v) 0
+  forM_ valves $ \k ->
+    forM_ valves $ \i ->
+      forM_ valves $ \j ->
+        modify' $ \dt ->
+          let ij = distLookup (i, j) dt
+              ik = distLookup (i, k) dt
+              kj = distLookup (k, j) dt
+              ij' = ik + kj
+           in if ij' < ij then Map.insert (i, j) ij' dt else dt
   where
-    bfs d vs =
-      if to `elem` vs
-        then d
-        else
-          let newVs = do
-                v <- vs
-                let ValveData {tunnels} = valveMap Map.! v
-                tunnels
-           in bfs (succ d) newVs
+    valves = Map.keys valveMap
+    numValves = length valves
+    distLookup k dt = fromMaybe numValves $ Map.lookup k dt
 
-totalFlowRate :: Map Valve ValveData -> Set Valve -> Int
-totalFlowRate valveMap =
-  sum
-    . fmap (\v -> flowRate $ valveMap Map.! v)
-    . toList
+distance :: DistanceTable -> Valve -> Valve -> Int
+distance (DistanceTable dt) from to =
+  fromMaybe (error "unknown valves") $ Map.lookup (from, to) dt
 
-annotate :: Show a => String -> a -> a
-annotate s a = traceShow (s <> ": " <> show a) a
+pathValue :: Map Valve ValveData -> DistanceTable -> Int -> [Valve] -> (Int, Int)
+pathValue valveMap distanceTable startTime path =
+  (endTime, sum segmentValues)
+  where
+    segments =
+      zip
+        (Valve "AA" : path)
+        path
+    (endTime, segmentValues) =
+      List.mapAccumL
+        ( \timeRemaining (from, to) ->
+            let timeRemaining' = timeRemaining - (distance distanceTable from to + 1)
+                value = timeRemaining' * flowRate (valveMap Map.! to)
+             in (timeRemaining', value)
+        )
+        startTime
+        segments
 
-memoPure :: Valve -> Set Valve -> Int -> State S Int
-memoPure v goalVs n = do
-  modify $ \s -> s {costMemo = Map.insert (v, goalVs) n $ costMemo s}
-  -- traceShowM =<< gets (Map.size . costMemo)
-  pure n
+-- Value of opening all other valves in arbitrary order.
+estimateValue :: Map Valve ValveData -> DistanceTable -> [Valve] -> Int
+estimateValue valveMap distanceTable path =
+  snd $ pathValue valveMap distanceTable timeRemaining remainingValves
+  where
+    remainingValves = toList $ Set.difference (Map.keysSet valveMap) (Set.fromList path)
+    (timeRemaining, _) = pathValue valveMap distanceTable 30 path
 
-data S = S
-  { costMemo :: Map (Valve, Set Valve) Int,
-    distanceMemo :: Map (Valve, Valve) Int
-  }
+-- data SearchResult = Found [[Valve]] | Infinity | Threshold Int [[Valve]]
+--
+-- data IDAStarResult = ISRFound ([[Valve]], Int) | ISRNotFound
+--
+-- iterativeDeepeningAStar :: Map Valve ValveData -> DistanceTable -> IDAStarResult
+-- iterativeDeepeningAStar valveMap distanceTable =
+--  go (estimateValue valveMap distanceTable root) [root]
+--  where
+--    root = []
+--    go bound path =
+--      case search valveMap distanceTable path 0 bound of
+--        Found newPath -> ISRFound (newPath, bound)
+--        Infinity -> ISRNotFound
+--        Threshold t newPath -> go t newPath
+--
+-- search :: Map Valve ValveData -> DistanceTable -> [[Valve]] -> Int -> Int -> SearchResult
+-- search valveMap distanceTable path g bound =
+--  let node = head path
+--      f = g + estimateValue valveMap distanceTable node
+--      valves = Map.keys valveMap
+--      remainingValves = toList $ Set.difference (Map.keysSet valveMap) (Set.fromList node)
+--   in if
+--          | f > bound -> Threshold f path
+--          | length node == length valves -> Found path
+--          | otherwise ->
+--              let successors = fmap (\v -> path ++ [v]) remainingValves
+--               in go Nothing successors
+--  where
+--    go mMin (s : succs) =
+--      case search valveMap distanceTable (s : path) (pathValue valueMap distanceTable 30 s) bound of
+--        Found newPath -> Found newPath
+--        Infinity -> go mMin succs
+--        Threshold m' newPaths -> case mMin of
+--          Nothing -> go (Just m') succs
+--          Just m -> if m' <= m then go (Just m') succs else go (Just m) succs
 
-cost :: Map Valve ValveData -> Valve -> Set Valve -> Set Valve -> State S Int
-cost valveMap v goalVs avoid = do
-  -- First see if it's been visited before
-  prior <- gets $ Map.lookup (v, goalVs) . costMemo
-  case prior of
-    Just i -> pure i
-    Nothing ->
-      memoPure v goalVs =<< do
-        let thisFlowRate = flowRate $ valveMap Map.! v
-        if Set.null goalVs
-          then pure thisFlowRate
-          else do
-            -- Cost of opening the current valve then traversing everything
-            costOpenCurrent <-
-              traverse
-                ( \goalV -> do
-                    let remaining = Set.delete goalV goalVs
-                    c <-
-                      cost
-                        valveMap
-                        goalV
-                        remaining
-                        avoid
-                    d <- distance valveMap v goalV
-                    pure
-                      ( thisFlowRate
-                          + ((1 + d) * totalFlowRate valveMap goalVs)
-                          + c
-                      )
-                )
-                (toList goalVs)
-            -- Cost of skipping the current valve and traversing from somewhere else
-            costSkipCurrent <-
-              traverse
-                ( \goalV ->
-                    if Set.member goalV avoid
-                      then pure Nothing
-                      else do
-                        let remaining = Set.delete goalV $ Set.insert v goalVs
-                        c <-
-                          cost
-                            valveMap
-                            goalV
-                            remaining
-                            (Set.insert v avoid)
-                        d <- distance valveMap v goalV
-                        pure $
-                          Just
-                            ( d * totalFlowRate valveMap (Set.insert v goalVs)
-                                + c
-                            )
-                )
-                (toList goalVs)
+bestPath :: Map Valve ValveData -> DistanceTable -> [Valve]
+bestPath valveMap distanceTable = go []
+  where
+    candidateValves = Set.fromList . filter ((/= 0) . flowRate . (valveMap Map.!)) $ Map.keys valveMap
+    go pathSoFar =
+      case Set.minView $ Set.difference candidateValves (Set.fromList pathSoFar) of
+        Nothing -> pathSoFar
+        Just (addValve, _) ->
+          go $
+            (\x -> traceShow ("result" ++ show (pathValue valveMap distanceTable 30 x)) x) $
+              maximumBy (comparing (\x -> (\v -> traceShow (x, v) v) . snd . pathValue valveMap distanceTable 30 $ x)) $
+                traceShowId $
+                  insertions addValve pathSoFar
 
-            pure $
-              minimum $
-                costOpenCurrent
-                  ++ catMaybes costSkipCurrent
+insertions :: a -> [a] -> [[a]]
+insertions z [] = [[z]]
+insertions z (x : xs) = (z : x : xs) : ((x :) <$> insertions z xs)
 
-part1 :: IO Int
+part1 :: IO Integer
 part1 = do
   valveMap <- readValveFile "real.txt"
-  let zeroFlowValves = Map.keysSet $ Map.filter ((== 0) . flowRate) valveMap
-  let absoluteFlowRate = 30 * sum (flowRate <$> Map.elems valveMap)
-  let absoluteCost = evalState (cost valveMap (Valve "AA") ((`Set.difference` zeroFlowValves) . Set.delete (Valve "AA") $ Map.keysSet valveMap) Set.empty) S {costMemo = Map.empty, distanceMemo = Map.empty}
-  traceShowM absoluteFlowRate
-  traceShowM absoluteCost
+  let distanceTable = mkDistanceTable valveMap
+  let possiblePaths = List.permutations . filter ((/= 0) . flowRate . (valveMap Map.!)) $ Map.keys valveMap
+  print $ length possiblePaths
+  -- print . (\x -> (x, pathValue valveMap distanceTable 30 x)) $ bestPath valveMap distanceTable
+  -- print $
+  --  pathValue
+  --    valveMap
+  --    distanceTable
+  --    30
+  --    [ Valve "DD",
+  --      Valve "BB",
+  --      Valve "JJ",
+  --      Valve "HH",
+  --      Valve "EE",
+  --      Valve "CC"
+  --    ]
 
-  pure $ absoluteFlowRate - absoluteCost
+  -- print $ length possiblePaths
+  -- print $ maximum $ fmap (snd . pathValue valveMap distanceTable 30) possiblePaths
+  -- print $ pathValue valveMap distanceTable 30 [Valve "EI", Valve "OA"]
+  -- print $ estimateValue valveMap distanceTable [Valve "EI", Valve "OA"]
+  undefined
