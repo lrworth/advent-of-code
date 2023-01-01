@@ -1,5 +1,6 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedLabels #-}
@@ -144,3 +145,95 @@ part1 = do
   let stateForest = unfoldForest' (nextStates usefulValves distanceTable) [initialState]
   let pathsWithValue = Tree.foldTree (pathWithValueFold valveMap) =<< stateForest
   pure $ List.maximumBy (comparing snd) pathsWithValue
+
+data MazeState2 = MazeState2
+  { location1 :: Valve,
+    location2 :: Valve,
+    avoid1 :: !(Set Valve),
+    avoid2 :: !(Set Valve),
+    newlyOpen :: !(Set Valve),
+    openValves :: !(Set Valve),
+    timeRemaining :: !Int
+  }
+  deriving (Show)
+
+nextStates2 :: Map Valve ValveData -> MazeState2 -> [MazeState2]
+nextStates2 valveMap MazeState2 {location1, location2, avoid1, avoid2, openValves, timeRemaining} = do
+  let nextActions1 = nextActions avoid1 location1
+  let nextActions2 = nextActions avoid2 location2
+  a1 <- nextActions1
+  a2 <- nextActions2
+  let newNewlyOpen =
+        ( case a1 of
+            Nothing -> Set.insert location1
+            Just _ -> id
+        )
+          . ( case a2 of
+                Nothing -> Set.insert location2
+                Just _ -> id
+            )
+          $ Set.empty
+      newLocation1 = fromMaybe location1 a1
+      newLocation2 = fromMaybe location2 a2
+      newTimeRemaining = timeRemaining - 1
+      newAvoid1 = case a1 of
+        Nothing -> Set.empty
+        Just _ -> Set.insert location1 avoid1
+      newAvoid2 = case a2 of
+        Nothing -> Set.empty
+        Just _ -> Set.insert location2 avoid2
+  if newTimeRemaining > 0
+    then
+      pure
+        MazeState2
+          { location1 = newLocation1,
+            location2 = newLocation2,
+            avoid1 = newAvoid1,
+            avoid2 = newAvoid2,
+            newlyOpen = newNewlyOpen,
+            openValves = openValves `Set.union` newNewlyOpen,
+            timeRemaining = newTimeRemaining
+          }
+    else []
+  where
+    -- Nothing means they opened the valve
+    nextActions :: Set Valve -> Valve -> [Maybe Valve]
+    nextActions avoid valve =
+      ( Just
+          <$> toList
+            ( Set.fromList (tunnels (valveMap Map.! valve))
+                Set.\\ avoid
+            )
+      )
+        <> [Nothing | flowRate (valveMap Map.! valve) > 0 && Set.notMember valve openValves]
+
+pathWithValueFold2 :: Map Valve ValveData -> MazeState2 -> [[(Int)]] -> [(Int)]
+pathWithValueFold2 valveMap MazeState2 {location1, location2, newlyOpen, timeRemaining} tailsWithValue =
+  if null tailsWithValue
+    then [addCurrent (0)]
+    else addCurrent <$> join tailsWithValue
+  where
+    addCurrent :: (Int) -> (Int)
+    addCurrent (tailValue) =
+      ( tailValue + timeRemaining * sum (flowRate . (valveMap Map.!) <$> toList newlyOpen)
+      )
+
+part2 :: IO Int
+part2 = do
+  valveMap <- readValveFile "real.txt"
+  let initialState =
+        MazeState2
+          { location1 = Valve "AA",
+            location2 = Valve "AA",
+            avoid1 = Set.empty,
+            avoid2 = Set.empty,
+            newlyOpen = Set.empty,
+            openValves = Set.empty,
+            timeRemaining = 26
+          }
+  let stateForest = unfoldForest' (nextStates2 valveMap) [initialState]
+  -- print $ length . Tree.flatten <$> stateForest
+  -- putStrLn $ Tree.drawForest $ show <<$>> stateForest
+  let pathsWithValue = Tree.foldTree (pathWithValueFold2 valveMap) =<< stateForest
+  -- print $ (\(a, _, _) -> length a) <$> pathsWithValue
+  pure $ List.maximum pathsWithValue
