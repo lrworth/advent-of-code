@@ -11,6 +11,11 @@ library
   hs-source-dirs:   src
   default-language: GHC2021
   ghc-options:      -Wall
+  mixins:
+    base hiding (Prelude),
+    relude (Relude as Prelude),
+    relude
+
   build-depends:
     , aeson
     , base                 ^>=4.16.0.0
@@ -26,6 +31,7 @@ library
     , mtl
     , pretty-show
     , regex-applicative
+    , relude
     , split
     , vector
     , witherable
