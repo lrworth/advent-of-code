@@ -13,7 +13,7 @@
 module Aoc where
 
 import Data.Finite (Finite, getFinite, modulo)
-import Data.Foldable (Foldable (maximum))
+import Data.Foldable (Foldable (maximum), minimum)
 import Data.Set qualified as Set
 import Data.Vector.Sized qualified as V
 import Relude.Extra.Foldable1 (Foldable1 (..))
@@ -42,6 +42,13 @@ newtype Rock
       )
   deriving (Eq, Show)
 
+keepTop :: Rock -> Rock
+keepTop r@(Rock parts) = case bottom of
+  Nothing -> r
+  Just minY -> Rock $ Set.filter (\(_, y) -> y >= minY) parts
+  where
+    bottom = find (\y -> all (\x -> Set.member (x, y) parts) [0 .. 6]) [rockHeight r - 1, rockHeight r - 2 .. 0]
+
 rocks :: V.Vector 5 Rock
 rocks =
   Rock . Set.fromList
@@ -52,6 +59,11 @@ rocks =
         [(0, 0), (0, 1), (0, 2), (0, 3)],
         [(0, 0), (1, 0), (0, 1), (1, 1)]
       )
+
+grounded :: Rock -> Rock
+grounded (Rock parts) = Rock $ Set.map (\(x, y) -> (x, y - minY)) parts
+  where
+    minY = minimum $ Set.map snd parts
 
 data Cycle n a = Cycle
   { source :: V.Vector n a,
@@ -124,7 +136,7 @@ landRock = modify $ \c@Chamber {landedRock, fallingRocks, fallingRockCoord} ->
           landedRock
           (rockApplyOffset fallingRockCoord rock)
    in c
-        { landedRock = newLandedRock,
+        { landedRock = keepTop newLandedRock,
           fallingRocks = nextRocks,
           fallingRockCoord = (2, rockHeight newLandedRock + 3)
         }
@@ -156,8 +168,10 @@ part1 = do
               fallingRocks = mkCycle rocks,
               fallingRockCoord = (2, 3)
             }
-    finalRock <- landedRock <$> go (10090 * 5 :: Integer) initialChamber
-    putTextLn $ drawRock finalRock
+        blocks :: Integer
+        blocks = 2022
+    finalRock <- landedRock <$> go blocks initialChamber
+    -- putTextLn $ drawRock finalRock
     pure $ rockHeight finalRock
   where
     go landingsLeft chamber = do
@@ -172,12 +186,6 @@ part1 = do
                 -- putTextLn . drawRock $ landedRock newChamber
                 go (if landed then landingsLeft - 1 else landingsLeft) newChamber
 
--- -- keepFirstRows :: Int -> Rock -> Rock
--- -- keepFirstRows n r@(Rock parts) = Rock $ Set.map (\(x, y) -> (x, y - ((topY + 1) - n))) topRows
--- --  where
--- --    topY = rockHeight r - 1
--- --    topRows = Set.filter ((> topY - n) . snd) parts
---
 -- -- landRock2 :: Chamber -> Chamber
 -- -- landRock2 c@Chamber {landedRock, fallingRockCoord} =
 -- --  c
