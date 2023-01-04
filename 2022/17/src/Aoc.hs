@@ -12,8 +12,10 @@
 
 module Aoc where
 
+import Control.Monad.ST (runST)
 import Data.Finite (Finite, getFinite, modulo)
 import Data.Foldable (Foldable (maximum), minimum)
+import Data.STRef (modifySTRef, modifySTRef', newSTRef, readSTRef, writeSTRef)
 import Data.Set qualified as Set
 import Data.Vector.Sized qualified as V
 import Relude.Extra.Foldable1 (Foldable1 (..))
@@ -49,6 +51,10 @@ keepTop r@(Rock parts) = case bottom of
   where
     bottom = find (\y -> all (\x -> Set.member (x, y) parts) [0 .. 6]) [rockHeight r - 1, rockHeight r - 2 .. 0]
 
+keep :: Int -> Rock -> Rock
+keep n r@(Rock parts) =
+  Rock $ Set.filter (\(_, y) -> y >= rockHeight r - n) parts
+
 rocks :: V.Vector 5 Rock
 rocks =
   Rock . Set.fromList
@@ -61,9 +67,9 @@ rocks =
       )
 
 grounded :: Rock -> Rock
-grounded (Rock parts) = Rock $ Set.map (\(x, y) -> (x, y - minY)) parts
+grounded (Rock parts) = Rock $ Set.mapMonotonic (\(x, y) -> (x, y - minY)) parts
   where
-    minY = minimum $ Set.map snd parts
+    minY = minimum $ Set.mapMonotonic snd parts
 
 data Cycle n a = Cycle
   { source :: V.Vector n a,
@@ -110,16 +116,16 @@ applyJet = \case
 
 rockApplyOffset :: (Int, Int) -> Rock -> Rock
 rockApplyOffset (offsetX, offsetY) (Rock parts) =
-  Rock $ Set.map (\(x, y) -> (x + offsetX, y + offsetY)) parts
+  Rock $ Set.mapMonotonic (\(x, y) -> (x + offsetX, y + offsetY)) parts
 
 rockWidth :: Rock -> Int
-rockWidth (Rock parts) = 1 + maximum (Set.map fst parts)
+rockWidth (Rock parts) = 1 + maximum (Set.mapMonotonic fst parts)
 
 currentFallingRock :: KnownNat nr => Chamber nj nr -> Rock
 currentFallingRock Chamber {fallingRocks} = peek fallingRocks
 
 chamberApplyJet :: (KnownNat nj, KnownNat nr) => State (Chamber nj nr) ()
-chamberApplyJet = modify $ \c@Chamber {landedRock, jets, fallingRockCoord} ->
+chamberApplyJet = modify' $ \c@Chamber {landedRock, jets, fallingRockCoord} ->
   let (jet, nextJets) = runState pop jets
       fallingRockNewCoord@(fallingRockNewX, _) = first (applyJet jet) fallingRockCoord
       fallingRockAbsolute = rockApplyOffset fallingRockNewCoord $ currentFallingRock c
@@ -129,14 +135,14 @@ chamberApplyJet = modify $ \c@Chamber {landedRock, jets, fallingRockCoord} ->
         else c {fallingRockCoord = fallingRockNewCoord, jets = nextJets}
 
 landRock :: (KnownNat nr) => State (Chamber nj nr) ()
-landRock = modify $ \c@Chamber {landedRock, fallingRocks, fallingRockCoord} ->
+landRock = modify' $ \c@Chamber {landedRock, fallingRocks, fallingRockCoord} ->
   let (rock, nextRocks) = runState pop fallingRocks
       newLandedRock =
         joinRocks
           landedRock
           (rockApplyOffset fallingRockCoord rock)
    in c
-        { landedRock = keepTop newLandedRock,
+        { landedRock = newLandedRock,
           fallingRocks = nextRocks,
           fallingRockCoord = (2, rockHeight newLandedRock + 3)
         }
@@ -150,6 +156,14 @@ chamberApplyGravity = do
     then True <$ landRock
     else False <$ put (c {fallingRockCoord = fallingRockNewCoord})
 
+chamberCullPastFullLine :: State (Chamber nj nr) ()
+chamberCullPastFullLine = modify' $ \c ->
+  c {landedRock = keepTop $ landedRock c}
+
+chamberCullPast :: Int -> State (Chamber nj nr) ()
+chamberCullPast n = modify' $ \c ->
+  c {landedRock = keep n $ landedRock c}
+
 drawRock :: Rock -> Text
 drawRock r@(Rock parts) =
   unlines . fmap toText $ (drawRow <$> [height, height - 1 .. 0]) <> ["+" <> replicate 7 '-' <> "+"]
@@ -159,6 +173,84 @@ drawRock r@(Rock parts) =
 
 part1 :: IO Int
 part1 = do
+  jetPattern <- readInputFile "sample.txt"
+  V.withSizedList jetPattern $ \jetPatternV -> do
+    let initialChamber =
+          Chamber
+            { landedRock = Rock Set.empty,
+              jets = mkCycle jetPatternV,
+              fallingRocks = mkCycle rocks,
+              fallingRockCoord = (2, 3)
+            }
+        blocks :: Int
+        blocks = 2022
+        finalRock = landedRock $ execState (replicateM blocks chamberLandOneRock) initialChamber
+    -- putTextLn $ drawRock finalRock
+    pure $ rockHeight finalRock
+
+-- Copied directly from https://en.wikipedia.org/wiki/Cycle_detection#Brent's_algorithm
+brent :: (p -> p -> Bool) -> (p -> p) -> p -> (Int, Int)
+brent eq f x0 = runST $ do
+  -- main phase: search successive powers of two
+  power <- newSTRef 1
+  lam <- newSTRef 1
+  tortoise <- newSTRef x0
+  hare <- newSTRef $ f x0 -- f(x0) is the element/node next to x0.
+  whileM (liftA2 ((not .) . eq) (readSTRef tortoise) (readSTRef hare)) $ do
+    whenM (liftA2 (==) (readSTRef power) (readSTRef lam)) $ do
+      -- time to start a new power of two?
+      writeSTRef tortoise =<< readSTRef hare
+      modifySTRef' power (* 2)
+      writeSTRef lam 0
+    modifySTRef' hare f
+    modifySTRef' lam (+ 1)
+
+  -- Find the position of the first repetition of length λ
+  writeSTRef tortoise x0
+  writeSTRef hare x0
+  lamVal <- readSTRef lam
+  replicateM_ lamVal $ do
+    modifySTRef' hare f
+  -- The distance between the hare and tortoise is now λ.
+
+  -- Next, the hare and tortoise move at same speed until they agree
+  mu <- newSTRef 0
+  whileM (liftA2 ((not .) . eq) (readSTRef tortoise) (readSTRef hare)) $ do
+    modifySTRef' tortoise f
+    modifySTRef' hare f
+    modifySTRef' mu (+ 1)
+
+  muVal <- readSTRef mu
+  pure (lamVal, muVal)
+
+whileM :: Monad m => m Bool -> m () -> m ()
+whileM p f =
+  p >>= \case
+    False -> pass
+    True -> f *> whileM p f
+
+until :: Monad m => m Bool -> m ()
+until f =
+  f >>= \case
+    True -> pass
+    False -> until f
+
+untilWithCount :: Monad m => m Bool -> m Int
+untilWithCount f = go 0
+  where
+    go n =
+      f >>= \case
+        True -> pure n
+        False -> go (succ n)
+
+chamberLandOneRock :: (KnownNat nj, KnownNat nr) => State (Chamber nj nr) Int
+chamberLandOneRock = untilWithCount $ chamberApplyJet *> chamberApplyGravity <* chamberCullPastFullLine
+
+chamberLandOneRockCapping :: (KnownNat nj, KnownNat nr) => Int -> State (Chamber nj nr) Int
+chamberLandOneRockCapping maxDropHeight = untilWithCount $ chamberApplyJet *> chamberApplyGravity <* chamberCullPast maxDropHeight
+
+part2 :: IO Int
+part2 = do
   jetPattern <- readInputFile "real.txt"
   V.withSizedList jetPattern $ \jetPatternV -> do
     let initialChamber =
@@ -168,74 +260,22 @@ part1 = do
               fallingRocks = mkCycle rocks,
               fallingRockCoord = (2, 3)
             }
-        blocks :: Integer
-        blocks = 2022
-    finalRock <- landedRock <$> go blocks initialChamber
-    -- putTextLn $ drawRock finalRock
-    pure $ rockHeight finalRock
+        blocks :: Int
+        blocks = V.length jetPatternV * V.length rocks
+        maxDropHeight = maximum $ evalState (replicateM blocks chamberLandOneRock) initialChamber
+        (cycleLength, cycleStart) = brent equalChambers (execState (chamberLandOneRockCapping maxDropHeight)) initialChamber
+        preCycle = execState (replicateM cycleStart chamberLandOneRock) initialChamber
+        preCycleHeight = rockHeight $ landedRock preCycle
+        afterFirstCycle = execState (replicateM cycleLength chamberLandOneRock) preCycle
+        afterFirstCycleHeight = rockHeight $ landedRock afterFirstCycle
+        cycleHeight = afterFirstCycleHeight - preCycleHeight
+        target = 1000000000000
+        cycleContribution = target - cycleStart
+        (cycles, remainder) = cycleContribution `divMod` cycleLength
+        remainderHeight = rockHeight . landedRock $ execState (replicateM remainder chamberLandOneRock) preCycle
+    pure $ preCycleHeight + cycles * cycleHeight + (remainderHeight - preCycleHeight)
   where
-    go landingsLeft chamber = do
-      -- print landingsLeft
-      if landingsLeft == 0
-        then pure chamber
-        else
-          let (landed, newChamber) = runState (chamberApplyJet *> chamberApplyGravity) chamber
-           in do
-                -- print $ fallingRockCoord newChamber
-                -- putTextLn . drawRock $ currentFallingRock newChamber
-                -- putTextLn . drawRock $ landedRock newChamber
-                go (if landed then landingsLeft - 1 else landingsLeft) newChamber
-
--- -- landRock2 :: Chamber -> Chamber
--- -- landRock2 c@Chamber {landedRock, fallingRockCoord} =
--- --  c
--- --    { landedRock = keepFirstRows 1 newLandedRock,
--- --      fallingRocks = nextFallingRocks c,
--- --      fallingRockCoord = (2, rockHeight newLandedRock + 3)
--- --    }
--- --  where
--- --    newLandedRock =
--- --      joinRocks landedRock
--- --        . rockApplyOffset fallingRockCoord
--- --        $ currentFallingRock c
--- --
--- -- chamberApplyGravity2 :: Chamber -> (Chamber, Bool)
--- -- chamberApplyGravity2 c@Chamber {landedRock, fallingRockCoord} =
--- --  if fallingRockNewY < 0 || overlaps landedRock fallingRockAbsolute
--- --    then (landRock2 c, True)
--- --    else (c {fallingRockCoord = fallingRockNewCoord}, False)
--- --  where
--- --    fallingRockNewCoord@(_, fallingRockNewY) = second (subtract 1) fallingRockCoord
--- --    fallingRockAbsolute = rockApplyOffset fallingRockNewCoord (currentFallingRock c)
--- --
--- -- {-
--- -- Ideas:
--- --- https://en.wikipedia.org/wiki/Cycle_detection
--- --- These algorithms depend on a function applied to a finite set. The chamber grows indefinitely so it is not a finite set. Thus it needs to be culled. Except in pathological cases, this is possible by identifying
--- --- Tortoise and hare algorithm might work
--- ---}
--- -- part2 :: IO Int
--- -- part2 = do
--- --  jetPattern <- readInputFile "sample0.txt"
--- --  let initialChamber =
--- --        Chamber
--- --          { landedRock = Rock Set.empty,
--- --            jets = jetPattern,
--- --            fallingRocks = rocks,
--- --            fallingRockCoord = (2, 3)
--- --          }
--- --  let finalRock = find ((== initialChamber) . snd . traceShowId) $ fmapToSnd (\n -> go jetPattern (n :: Integer) initialChamber) [1 ..]
--- --  print finalRock
--- --  undefined
--- --  where
--- --    go jetPattern landingsLeft chamber =
--- --      -- traceShow landingsLeft $
--- --      -- print landingsLeft
--- --      if landingsLeft == 0
--- --        then chamber
--- --        else
--- --          let (newChamber, landed) = chamberApplyGravity2 $ chamberApplyJet jetPattern chamber
--- --           in do
--- --                -- print $ fallingRockCoord newChamber
--- --                -- putTextLn . drawRock $ landedRock newChamber
--- --                go jetPattern (if landed then landingsLeft - 1 else landingsLeft) newChamber
+    equalChambers :: Chamber nj nr -> Chamber nj nr -> Bool
+    equalChambers a b =
+      (grounded $ landedRock a, jets a, fallingRocks a)
+        == (grounded $ landedRock b, jets b, fallingRocks b)
