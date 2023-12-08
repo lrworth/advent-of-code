@@ -1,0 +1,54 @@
+cabal-version: 3.4
+name:          aoc
+version:       0.1.0.0
+synopsis:      Advent Of Code 2023
+license:
+author:        Luke Worth
+maintainer:    luke@worth.id.au
+build-type:    Simple
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import:           warnings
+  exposed-modules:  Aoc
+  build-depends:
+    , aeson
+    , base                 ^>=4.19.0.0
+    , bytestring
+    , containers
+    , finite-typelits
+    , fixed-vector
+    , generic-data
+    , generic-lens
+    , lens
+    , megaparsec
+    , MemoTrie
+    , monoidal-containers
+    , mtl
+    , path
+    , pretty-show
+    , regex-applicative
+    , relude
+    , split
+    , vector
+    , vector-sized
+    , witherable
+
+  hs-source-dirs:   src
+  default-language: GHC2021
+  mixins:
+    base hiding (Prelude),
+    relude (Relude as Prelude),
+    relude
+
+test-suite x01-test
+  import:           warnings
+  default-language: GHC2021
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  build-depends:
+    , base  ^>=4.19.0.0
+    , x02
