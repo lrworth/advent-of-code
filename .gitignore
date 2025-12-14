@@ -2,3 +2,5 @@
 .envrc
 .direnv/
 dist-newstyle/
+.zig-cache/
+zig-out/
