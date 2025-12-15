@@ -1,5 +1,5 @@
 {
-  description = "AOC 2025";
+  description = "AOC 2025 (Zig)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
