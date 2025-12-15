@@ -65,8 +65,6 @@ test copyHalf {
     try std.testing.expectEqual(9876598765, copyHalf(98765));
 }
 
-// Look for numbers n that are, for some h, n = h + h * (10 ^ floor(1 + log_10 h))
-
 const RangeInvalidIdIterator = struct {
     const Self = @This();
 
