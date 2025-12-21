@@ -1,6 +1,9 @@
 const std = @import("std");
+const DisjointSetSized = @import("./DisjointSetSized.zig");
 const ArrayList = std.ArrayList;
 const fmt = std.fmt;
+const hash_map = std.hash_map;
+const AutoHashMapUnmanaged = hash_map.AutoHashMapUnmanaged;
 const mem = std.mem;
 const testing = std.testing;
 const Allocator = mem.Allocator;
@@ -29,7 +32,7 @@ const sample =
     \\425,690,689
 ;
 
-const sampleAsVecs = &.{ .{ 162, 817, 812 }, .{ 57, 618, 57 }, .{ 906, 360, 560 }, .{ 592, 479, 940 }, .{ 352, 342, 300 }, .{ 466, 668, 158 }, .{ 542, 29, 236 }, .{ 431, 825, 988 }, .{ 739, 650, 466 }, .{ 52, 470, 668 }, .{ 216, 146, 977 }, .{ 819, 987, 18 }, .{ 117, 168, 530 }, .{ 805, 96, 715 }, .{ 346, 949, 466 }, .{ 970, 615, 88 }, .{ 941, 993, 340 }, .{ 862, 61, 35 }, .{ 984, 92, 344 }, .{ 425, 690, 689 } };
+const sampleAsVecs = &[_]Vec3{ .{ 162, 817, 812 }, .{ 57, 618, 57 }, .{ 906, 360, 560 }, .{ 592, 479, 940 }, .{ 352, 342, 300 }, .{ 466, 668, 158 }, .{ 542, 29, 236 }, .{ 431, 825, 988 }, .{ 739, 650, 466 }, .{ 52, 470, 668 }, .{ 216, 146, 977 }, .{ 819, 987, 18 }, .{ 117, 168, 530 }, .{ 805, 96, 715 }, .{ 346, 949, 466 }, .{ 970, 615, 88 }, .{ 941, 993, 340 }, .{ 862, 61, 35 }, .{ 984, 92, 344 }, .{ 425, 690, 689 } };
 
 const Vec3 = @Vector(3, i64);
 
@@ -53,65 +56,128 @@ test parse {
     try testing.expectEqualSlices(Vec3, sampleAsVecs, vecs);
 }
 
-const DistanceTable = struct {
-    width: usize,
-    distances: []i64,
-    fn init(gpa: Allocator, coords: []const Vec3) !DistanceTable {
-        const table: DistanceTable = .{ .width = coords.len, .distances = try gpa.alloc(i64, coords.len * coords.len) };
-        for (coords, 0..) |a, a_index| {
-            table.set(a_index, a_index, 0);
-            for (coords[a_index + 1 ..], a_index + 1..) |b, b_index| {
-                const diff = b - a;
-                const distance_sq: i64 = @reduce(.Add, diff * diff);
-                table.set(a_index, b_index, distance_sq);
-                table.set(b_index, a_index, distance_sq);
-            }
-        }
-        return table;
+const IndexPair = struct {
+    a: usize,
+    b: usize,
+    distance_sq: i64,
+    fn init(vecs: []const Vec3, a: usize, b: usize) IndexPair {
+        const diff = vecs[b] - vecs[a];
+        const distance_sq: i64 = @reduce(.Add, diff * diff);
+
+        return .{ .a = a, .b = b, .distance_sq = distance_sq };
     }
-    fn deinit(self: DistanceTable, gpa: Allocator) void {
-        gpa.free(self.distances);
-    }
-    fn set(self: DistanceTable, x: usize, y: usize, val: i64) void {
-        self.distances[y * self.width + x] = val;
-    }
-    fn get(self: DistanceTable, x: usize, y: usize) i64 {
-        return self.distances[y * self.width + x];
-    }
-    fn expectEqual(expected: DistanceTable, actual: DistanceTable) !void {
-        try testing.expectEqual(expected.width, actual.width);
-        try testing.expectEqualSlices(i64, expected.distances, actual.distances);
+    fn distanceLessThan(_: void, lhs: IndexPair, rhs: IndexPair) bool {
+        return lhs.distance_sq < rhs.distance_sq;
     }
 };
 
-test DistanceTable {
+fn indexPairsSortedByDistance(gpa: Allocator, vecs: []const Vec3) ![]IndexPair {
+    if (vecs.len == 0) return try gpa.alloc(IndexPair, 0);
+    const pairs = try gpa.alloc(IndexPair, ((vecs.len - 1) * vecs.len) / 2);
+    errdefer gpa.free(pairs);
+    var pairs_idx: usize = 0;
+    for (0..vecs.len) |a_idx| {
+        for (a_idx + 1..vecs.len) |b_idx| {
+            pairs[pairs_idx] = IndexPair.init(vecs, a_idx, b_idx);
+            pairs_idx += 1;
+        }
+    }
+
+    mem.sortUnstable(IndexPair, pairs, {}, IndexPair.distanceLessThan);
+    return pairs;
+}
+
+test indexPairsSortedByDistance {
     const coords = [_]Vec3{ .{ 1, 1, 1 }, .{ 5, 0, 3 }, .{ 0, 0, 1 } };
-    const table = try DistanceTable.init(testing.allocator, &coords);
-    defer table.deinit(testing.allocator);
-    var expected_distances = [_]i64{ 0, 21, 2, 21, 0, 29, 2, 29, 0 };
-    try DistanceTable.expectEqual(table, DistanceTable{ .width = coords.len, .distances = &expected_distances });
+    const pairs = try indexPairsSortedByDistance(testing.allocator, &coords);
+    defer testing.allocator.free(pairs);
+    const expected_pairs = [_]IndexPair{ .{ .a = 0, .b = 2, .distance_sq = 2 }, .{ .a = 0, .b = 1, .distance_sq = 21 }, .{ .a = 1, .b = 2, .distance_sq = 29 } };
+    try testing.expectEqualSlices(IndexPair, &expected_pairs, pairs);
+}
+
+fn multiplyThreeLargestCircuits(gpa: Allocator, index_pairs: []const IndexPair, size: usize) !u64 {
+    const ds = try DisjointSetSized.init(gpa, size);
+    defer ds.deinit(gpa);
+    for (index_pairs) |ip| {
+        ds.merge(ip.a, ip.b);
+    }
+
+    const sizes = try gpa.alloc(u64, size);
+    defer gpa.free(sizes);
+
+    for (ds.nodes, 0..) |node, i| {
+        sizes[i] = node.size;
+    }
+
+    var threeBiggest = [3]u64{ 0, 0, 0 };
+    for (sizes) |s| {
+        if (s > threeBiggest[0]) {
+            threeBiggest[0] = s;
+            mem.sortUnstable(u64, &threeBiggest, {}, u64LessThan);
+        }
+    }
+    var result: u64 = 1;
+    for (threeBiggest) |b| {
+        result *= b;
+    }
+    return result;
+}
+
+test "part 1 sample" {
+    const gpa = testing.allocator;
+    const index_pairs = try indexPairsSortedByDistance(gpa, sampleAsVecs);
+    defer gpa.free(index_pairs);
+    try testing.expectEqual(40, try multiplyThreeLargestCircuits(gpa, index_pairs[0..10], index_pairs.len));
+}
+
+fn disjointSetConnected(ds: DisjointSetSized) bool {
+    const first = ds.findSet(0);
+    for (1..ds.nodes.len) |i| {
+        if (ds.findSet(i) != first) return false;
+    }
+    return true;
+}
+
+fn lastConnectionToConnected(gpa: Allocator, index_pairs: []const IndexPair, size: usize) !usize {
+    const ds = try DisjointSetSized.init(gpa, size);
+    defer ds.deinit(gpa);
+    for (index_pairs, 0..) |ip, i| {
+        // print("iteration {}: merging {} and {}\n", .{ i, ip.a, ip.b });
+        ds.merge(ip.a, ip.b);
+        if (disjointSetConnected(ds)) return i;
+        // ds.print();
+    }
+    return error.NotConnectable;
+}
+
+fn lastConnectedXCoordsMultiplied(gpa: Allocator, vecs: []const Vec3) !i64 {
+    const index_pairs = try indexPairsSortedByDistance(gpa, vecs);
+    defer gpa.free(index_pairs);
+    const last_index_pair = try lastConnectionToConnected(gpa, index_pairs, vecs.len);
+    return vecs[index_pairs[last_index_pair].a][0] * vecs[index_pairs[last_index_pair].b][0];
+}
+
+test "part 2 sample" {
+    const gpa = testing.allocator;
+    try testing.expectEqual(25272, try lastConnectedXCoordsMultiplied(gpa, sampleAsVecs));
+}
+
+fn u64LessThan(_: void, lhs: u64, rhs: u64) bool {
+    return lhs < rhs;
 }
 
 pub fn main() !void {
-    // const startns = std.time.nanoTimestamp();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
     const input = try std.fs.cwd().readFileAlloc(allocator, "data/day8.txt", 10 * 1024 * 1024);
     const vecs = try parse(allocator, input);
     defer allocator.free(vecs);
-    const table = try DistanceTable.init(allocator, vecs);
-    defer table.deinit(allocator);
-    print("{}", .{table});
-    //
-    // const diagram = Diagram.init(input);
-    // const part1 = try beamSplittersHit(allocator, diagram);
-    // const part2 = try timelines(allocator, diagram);
-    // // const part1endns = std.time.nanoTimestamp();
-    // // const part2 = try grandTotal2(input);
-    // // const part2endns = std.time.nanoTimestamp();
-    // std.debug.print("part 1: {}\n", .{part1});
-    // // std.debug.print("took {}ns\n", .{part1endns - startns});
-    // std.debug.print("part 2: {}\n", .{part2});
-    // std.debug.print("took {}ns\n", .{part2endns - part1endns});
+    const index_pairs = try indexPairsSortedByDistance(allocator, vecs);
+    defer allocator.free(index_pairs);
+
+    const part1 = try multiplyThreeLargestCircuits(allocator, index_pairs[0..1000], index_pairs.len);
+    const part2 = try lastConnectedXCoordsMultiplied(allocator, vecs);
+    std.debug.print("part 1: {}\n", .{part1});
+    std.debug.print("part 2: {}\n", .{part2});
 }
