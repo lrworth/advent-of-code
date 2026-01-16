@@ -171,18 +171,19 @@ pub fn maxMatch(gpa: std.mem.Allocator, g: *BipartiteGraphConcaveV) ![]Edge {
     return m.toOwnedSlice(gpa);
 }
 
-// test {
-//     const gpa = std.testing.allocator;
-//     // Example from figure 7.
-//     var h_neb = [_]?BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 1 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
-//     var g = try BipartiteGraphConcaveV.fromHNeb(gpa, &h_neb);
-//     defer g.deinit(gpa);
-//
-//     const m = try maxMatch(gpa, &g);
-//     defer gpa.free(m);
-//
-//     std.debug.print("{any}", .{m});
-// }
+test maxMatch {
+    const gpa = std.testing.allocator;
+    // Example from figure 7.
+    var h_neb = [_]BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 1 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
+    var g = try BipartiteGraphConcaveV.fromHNeb(gpa, &h_neb);
+    defer g.deinit(gpa);
+
+    const m = try maxMatch(gpa, &g);
+    defer gpa.free(m);
+
+    const expected_edges = [_]Edge{ .{ 0, 0 }, .{ 2, 1 }, .{ 4, 2 }, .{ 1, 3 }, .{ 5, 4 } };
+    try std.testing.expectEqualDeep(&expected_edges, m);
+}
 
 /// m is a maximum matching of the bipartite graph. Returns a minimum
 /// independent set of vertices. Caller owns the result.
