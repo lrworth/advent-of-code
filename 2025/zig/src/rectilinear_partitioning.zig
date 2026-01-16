@@ -21,13 +21,21 @@ const BipartiteGraphConcaveV = struct {
     h_neb: []?Interval,
     v_neb: [][]?usize,
 
-    fn vNebFromHNeb(gpa: std.mem.Allocator, h_neb: []const Interval) ![][]usize {
+    fn deinit(self: *BipartiteGraphConcaveV, gpa: std.mem.Allocator) void {
+        gpa.free(self.h_neb);
+        for (self.v_neb) |v| {
+            gpa.free(v);
+        }
+        gpa.free(self.v_neb);
+    }
+
+    fn vNebFromHNeb(gpa: std.mem.Allocator, h_neb: []const Interval) ![][]?usize {
         var max_v: usize = 0;
         for (h_neb) |interval| {
             max_v = @max(max_v, interval.last);
         }
 
-        const v_neb = try gpa.alloc(std.ArrayList(usize), max_v + 1);
+        const v_neb = try gpa.alloc(std.ArrayList(?usize), max_v + 1);
         defer {
             for (v_neb) |*neb| {
                 neb.deinit(gpa);
@@ -35,7 +43,7 @@ const BipartiteGraphConcaveV = struct {
             gpa.free(v_neb);
         }
         for (v_neb) |*v_item| {
-            v_item.* = std.ArrayList(usize).empty;
+            v_item.* = std.ArrayList(?usize).empty;
         }
 
         for (h_neb, 0..) |interval, h_ind| {
@@ -44,7 +52,7 @@ const BipartiteGraphConcaveV = struct {
             }
         }
 
-        const result = try gpa.alloc([]usize, v_neb.len);
+        const result = try gpa.alloc([]?usize, v_neb.len);
         for (result, v_neb) |*slice, *array| {
             slice.* = try array.toOwnedSlice(gpa);
         }
@@ -52,57 +60,56 @@ const BipartiteGraphConcaveV = struct {
         return result;
     }
 
-    // /// Each h_neb[h] establishes a set of edges from h to each vertical vertex
-    // /// in the interval [ h_neb[h].first, h_neb[h].last ].
-    // /// h_neb is placed into the return value but ownership retained by caller. Caller owns the return value.
-    // fn fromHNeb(gpa: std.mem.Allocator, h_neb: []const Interval) !BipartiteGraphConcaveV {
-    //     return .{ .h_neb = blk: {
-    //         const out_h_neb = try gpa.alloc(?Interval, h_neb.len);
-    //         errdefer gpa.free(out_h_neb);
-    //         @memcpy(out_h_neb, h_neb);
-    //         break :blk out_h_neb;
-    //     }, .v_neb = blk: {
-    //         const out_v_neb = try gpa.alloc([]usize, max_v + 1);
-    //         errdefer gpa.free(out_v_neb);
-    //         for (v_neb, out_v_neb) |*v_item, *out_v_item| {
-    //             out_v_item.* = try v_item.*.toOwnedSlice(gpa);
-    //             std.debug.print("setting out_v_item to {} ({any})\n", .{ out_v_item, out_v_item.* });
-    //         }
-    //         break :blk out_v_neb;
-    //     } };
-    // }
-
-    fn deinit(self: BipartiteGraphConcaveV, gpa: std.mem.Allocator) void {
-        gpa.free(self.h_neb);
-        for (self.v_neb) |v| {
-            std.debug.print("Freeing v {} ({any})\n", .{ &v, v });
-            gpa.free(v);
+    test vNebFromHNeb {
+        const gpa = std.testing.allocator;
+        const h_neb = [_]BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 2 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
+        const v_neb = try BipartiteGraphConcaveV.vNebFromHNeb(gpa, &h_neb);
+        defer {
+            for (v_neb) |g_| {
+                gpa.free(g_);
+            }
+            gpa.free(v_neb);
         }
-        gpa.free(self.v_neb);
+        const expected_v_neb: []const []const ?usize = &.{ &.{0}, &.{ 0, 1, 2 }, &.{ 0, 1, 2, 3, 4 }, &.{ 1, 3, 5, 6 }, &.{5} };
+        try std.testing.expectEqualDeep(expected_v_neb, v_neb);
+    }
+
+    /// Each h_neb[h] establishes a set of edges from h to each vertical vertex
+    /// in the interval [ h_neb[h].first, h_neb[h].last ].
+    /// h_neb is placed into the return value but ownership retained by caller. Caller owns the return value.
+    fn fromHNeb(gpa: std.mem.Allocator, h_neb: []const Interval) !BipartiteGraphConcaveV {
+        const v_neb = try vNebFromHNeb(gpa, h_neb);
+        const result_h_neb = try gpa.alloc(?Interval, h_neb.len);
+        for (result_h_neb, h_neb) |*out, in| {
+            out.* = in;
+        }
+        return .{ .h_neb = result_h_neb, .v_neb = v_neb };
+    }
+
+    test fromHNeb {
+        const gpa = std.testing.allocator;
+        const h_neb = [_]BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 2 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
+        var g = try BipartiteGraphConcaveV.fromHNeb(gpa, &h_neb);
+        defer g.deinit(gpa);
+        var expected_g: BipartiteGraphConcaveV = .{ .h_neb = blk: {
+            const data = [_]?Interval{ .{ .first = 0, .last = 2 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
+            break :blk try gpa.dupe(?Interval, &data);
+        }, .v_neb = blk: {
+            const data = [_][]const ?usize{ &.{0}, &.{ 0, 1, 2 }, &.{ 0, 1, 2, 3, 4 }, &.{ 1, 3, 5, 6 }, &.{5} };
+            const result = try gpa.alloc([]?usize, data.len);
+            for (result, data) |*out, in| {
+                out.* = try gpa.dupe(?usize, in);
+            }
+            break :blk result;
+        } };
+        defer expected_g.deinit(gpa);
+        try std.testing.expectEqualDeep(expected_g, g);
     }
 };
 
 test {
-    const gpa = std.testing.allocator;
-    const h_neb = [_]BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 2 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
-    const v_neb = try BipartiteGraphConcaveV.vNebFromHNeb(gpa, &h_neb);
-    defer {
-        for (v_neb) |g_| {
-            gpa.free(g_);
-        }
-        gpa.free(v_neb);
-    }
-    const expected_v_neb: []const []const usize = &.{ &.{0}, &.{ 0, 1, 2 }, &.{ 0, 1, 2, 3, 4 }, &.{ 1, 3, 5, 6 }, &.{5} };
-    try std.testing.expectEqualDeep(expected_v_neb, v_neb);
+    _ = BipartiteGraphConcaveV;
 }
-
-// test {
-//     const gpa = std.testing.allocator;
-//     const h_neb = [_]?BipartiteGraphConcaveV.Interval{ .{ .first = 0, .last = 1 }, .{ .first = 1, .last = 3 }, .{ .first = 1, .last = 2 }, .{ .first = 2, .last = 3 }, .{ .first = 2, .last = 2 }, .{ .first = 3, .last = 4 }, .{ .first = 3, .last = 3 } };
-//     var g = try BipartiteGraphConcaveV.fromHNeb(gpa, &h_neb);
-//     defer g.deinit(gpa);
-//     std.debug.print("{any}\n", .{g});
-// }
 
 // Procedure MaxMatch(G,M);
 // {G = ( H∪V, E) is a bipartite graph that is convex on V. V = {v1, ..., vnV } is ordered as required by
