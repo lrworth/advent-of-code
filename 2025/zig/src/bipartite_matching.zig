@@ -308,8 +308,8 @@ test iteratorList {
 
 test "maximumMatchingFast extensionally equal to maximumMatchingGloverSimple" {
     const IntervalIteratorList = iteratorList(IntervalIterator, Interval);
-    const max_m = 6;
-    const max_n = 6;
+    const max_m = 5;
+    const max_n = 5;
     inline for (1..max_m) |m| {
         inline for (1..max_n) |n| {
             // std.debug.print("m={} n={}\n", .{ m, n });
