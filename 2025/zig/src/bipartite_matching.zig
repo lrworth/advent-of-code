@@ -3,8 +3,8 @@
 
 const std = @import("std");
 
+const Interval = struct { beg: usize, end: usize };
 const BipartiteGraphConvexOnA = struct {
-    const Interval = struct { beg: usize, end: usize };
     a_count: usize,
     b: []const ?Interval,
 
@@ -154,7 +154,7 @@ pub fn maximumMatchingFast(beg: []usize, end: []usize, ordbeg: []usize, queue_bu
     const n = beg.len;
     std.debug.assert(end.len == n);
     std.debug.assert(ordbeg.len == n);
-    std.debug.assert(match.len == n);
+    std.debug.assert(queue_buffer.len == n);
 
     sortBegEnd(beg, end);
     // std.debug.print("beg = {any}; end = {any}\n", .{ beg, end });
@@ -172,7 +172,7 @@ pub fn maximumMatchingFast(beg: []usize, end: []usize, ordbeg: []usize, queue_bu
     var queue_alloc = std.heap.FixedBufferAllocator.init(@ptrCast(queue_buffer));
 
     var queue = std.PriorityQueue(usize, void, compareFn.lessThan).init(queue_alloc.allocator(), {});
-    queue.ensureTotalCapacityPrecise(m) catch unreachable;
+    queue.ensureTotalCapacityPrecise(n) catch unreachable;
     var nb: usize = 0;
     var ne: usize = 0;
 
@@ -208,6 +208,173 @@ test maximumMatchingFast {
 
     maximumMatchingFast(&beg, &end, &ordbeg, &queue_buffer, &match);
     try std.testing.expectEqual([_]?usize{ 2, 0, 1, 3, 4 }, match);
+}
+
+const IntervalIterator = struct {
+    max: usize,
+    next_beg: usize = 0,
+    next_end: usize = 0,
+    fn next(self: *IntervalIterator) ?Interval {
+        if (self.next_beg > self.max) return null;
+        defer {
+            if (self.next_end < self.max) {
+                self.next_end += 1;
+            } else {
+                self.next_beg += 1;
+                self.next_end = self.next_beg;
+            }
+        }
+        return .{ .beg = self.next_beg, .end = self.next_end };
+    }
+
+    fn reset(self: *IntervalIterator) void {
+        self.next_beg = 0;
+        self.next_end = 0;
+    }
+};
+
+test IntervalIterator {
+    var it = IntervalIterator{ .max = 3 };
+    try std.testing.expectEqualDeep(Interval{ .beg = 0, .end = 0 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 0, .end = 1 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 0, .end = 2 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 0, .end = 3 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 1, .end = 1 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 1, .end = 2 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 1, .end = 3 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 2, .end = 2 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 2, .end = 3 }, it.next());
+    try std.testing.expectEqualDeep(Interval{ .beg = 3, .end = 3 }, it.next());
+    try std.testing.expectEqualDeep(null, it.next());
+    it.reset();
+    try std.testing.expectEqualDeep(Interval{ .beg = 0, .end = 0 }, it.next());
+}
+
+/// IT should support next() and reset().
+/// next() should return a T.
+fn iteratorList(comptime IT: type, comptime T: type) type {
+    return struct {
+        const Self = @This();
+        iterators: []IT,
+        values: []T,
+        /// `iterators` and `values` should have the same cardinality. `values` can be uninitialised. `iterators` and `values` are owned by the called.
+        /// Initially, and after calling `reset()`, `next()` should return a value (not null).
+        fn init(iterators: []IT, values: []T) Self {
+            for (iterators, values) |*it, *val| {
+                val.* = it.next().?;
+            }
+            return .{ .iterators = iterators, .values = values };
+        }
+        fn next(self: *Self) bool {
+            for (self.iterators, self.values) |*it, *val| {
+                if (it.next()) |x| {
+                    val.* = x;
+                    return true;
+                } else {
+                    it.reset();
+                    val.* = it.next().?;
+                }
+            }
+            return false;
+        }
+    };
+}
+
+test iteratorList {
+    const IL = iteratorList(IntervalIterator, Interval);
+    var iterators = [_]IntervalIterator{ .{ .max = 1 }, .{ .max = 1 } };
+    var values: [2]Interval = undefined;
+    var il = IL.init(&iterators, &values);
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 0 }, .{ .beg = 0, .end = 0 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 1 }, .{ .beg = 0, .end = 0 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 1, .end = 1 }, .{ .beg = 0, .end = 0 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 0 }, .{ .beg = 0, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 1 }, .{ .beg = 0, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 1, .end = 1 }, .{ .beg = 0, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 0 }, .{ .beg = 1, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 0, .end = 1 }, .{ .beg = 1, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(true, il.next());
+    try std.testing.expectEqualDeep(&[2]Interval{ .{ .beg = 1, .end = 1 }, .{ .beg = 1, .end = 1 } }, &values);
+    try std.testing.expectEqualDeep(false, il.next());
+    try std.testing.expectEqualDeep(true, il.next());
+}
+
+test "maximumMatchingFast extensionally equal to maximumMatchingGloverSimple" {
+    const IntervalIteratorList = iteratorList(IntervalIterator, Interval);
+    const max_m = 6;
+    const max_n = 6;
+    inline for (1..max_m) |m| {
+        inline for (1..max_n) |n| {
+            // std.debug.print("m={} n={}\n", .{ m, n });
+
+            var iterators: [n]IntervalIterator = undefined;
+            for (&iterators) |*it| it.* = .{ .max = m - 1 };
+            var values: [n]Interval = undefined;
+            var iterator_list = IntervalIteratorList.init(&iterators, &values);
+            while (true) : (if (!iterator_list.next()) break) {
+                // `values` is the next list of intervals to check.
+
+                // std.debug.print("values={any}\n", .{&values});
+
+                var beg: [n]usize = undefined;
+                var end: [n]usize = undefined;
+                var ordbeg: [n]usize = undefined;
+                var queue_buffer: [n]usize = undefined;
+                var match: [m]?usize = undefined;
+                for (values, &beg, &end) |v, *b, *e| {
+                    b.* = v.beg;
+                    e.* = v.end;
+                }
+
+                var simple_b: [n]?Interval = undefined;
+                for (values, &simple_b) |v, *b| {
+                    b.* = v;
+                }
+                var simple = BipartiteGraphConvexOnA{ .a_count = m, .b = &simple_b };
+
+                const glover = try simple.maximumMatchingGloverSimple(std.testing.allocator);
+                defer std.testing.allocator.free(glover);
+                maximumMatchingFast(&beg, &end, &ordbeg, &queue_buffer, &match);
+
+                var glover_cardinality: usize = 0;
+                for (glover) |glover_| {
+                    if (glover_) |_| glover_cardinality += 1;
+                }
+
+                var match_cardinality: usize = 0;
+                for (match) |match_| {
+                    if (match_) |_| match_cardinality += 1;
+                }
+
+                // const LessThanFn = struct {
+                //     fn call(_: void, lhs: ?usize, rhs: ?usize) bool {
+                //         if (lhs) |lhs_| {
+                //             return if (rhs) |rhs_|
+                //                 lhs_ < rhs_
+                //             else
+                //                 false;
+                //         } else {
+                //             return if (rhs) |_| true else false;
+                //         }
+                //     }
+                // };
+
+                // std.mem.sort(?usize, glover, {}, LessThanFn.call);
+                // std.mem.sort(?usize, &match, {}, LessThanFn.call);
+
+                // std.debug.print("glover={any}\n", .{glover});
+                // std.debug.print("match={any}\n", .{&match});
+                try std.testing.expectEqual(glover_cardinality, match_cardinality);
+            }
+        }
+    }
 }
 
 test {
