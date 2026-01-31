@@ -380,3 +380,274 @@ test "maximumMatchingFast extensionally equal to maximumMatchingGloverSimple" {
 test {
     _ = BipartiteGraphConvexOnA;
 }
+
+/// Algorithm 2 in the paper.
+/// For all k in 0..n, [`beg[k]`,`end[k]`] is an interval of vertices in A.
+///
+/// Size of `beg`, `end`, `s_buffer`, `stack`, `sub1`, `sub2`, and `y` are n.
+/// `beg` and `end` are reordered in-place. `s_buffer`, `stack`, `sub1`, and `sub2` are working buffers which do not need to be initialised.
+/// `y` is the output. It does not need to be initialised.
+pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack: []usize, sub1_buffer: []usize, sub2_buffer: []usize, y: []usize) void {
+    const n: usize = beg.len;
+    std.debug.assert(end.len == n);
+    std.debug.assert(s_buffer.len == n);
+    std.debug.assert(stack.len == n);
+    std.debug.assert(sub1_buffer.len == n);
+    std.debug.assert(sub2_buffer.len == n);
+    std.debug.assert(y.len == n);
+
+    const SortBoth = struct {
+        beg: []usize,
+        end: []usize,
+        pub fn swap(self: @This(), a: usize, b: usize) void {
+            std.mem.swap(usize, &self.beg[a], &self.beg[b]);
+            std.mem.swap(usize, &self.end[a], &self.end[b]);
+        }
+        pub fn lessThan(self: @This(), a: usize, b: usize) bool {
+            return switch (std.math.order(self.beg[a], self.beg[b])) {
+                .gt => false,
+                .lt => true,
+                .eq => self.end[a] < self.end[b],
+            };
+        }
+    };
+    printPaired(usize, usize, beg, end);
+    std.debug.print("\n", .{});
+
+    std.sort.pdqContext(0, n, SortBoth{ .beg = beg, .end = end });
+
+    std.debug.print("after sorting\n", .{});
+    printPaired(usize, usize, beg, end);
+    std.debug.print("\n", .{});
+
+    // Find last segment jm of middle region.
+    var jm: usize = 0;
+    for (1..n) |j| {
+        if (end[j] >= end[jm]) jm = j;
+    }
+
+    std.debug.print("jm = {}\n", .{jm});
+
+    // Extract the elements in the top and bottom regions, and the extremities
+    // of the middle region, into s.
+    //
+    // l becomes the number of elements in the top and bottom regions,
+    // including the two ends of the middle region.
+    const s: []usize = blk: {
+        // Extract segments not in internal part of middle region into s.
+        var e: usize = end[0];
+        var l: usize = 0;
+        // s contains the start and end of the middle region, and all elements not in the middle region.
+        for (0..n) |j| {
+            if (end[j] >= e and j != 0 and j != jm) {
+                e = end[j];
+            } else {
+                s_buffer[l] = j;
+                l += 1;
+            }
+        }
+
+        break :blk s_buffer[0..l];
+    };
+
+    {
+        std.debug.print("s* = ", .{});
+        var first = true;
+        for (s, 0..) |s_, i| {
+            if (first) {
+                first = false;
+            } else {
+                std.debug.print(", ", .{});
+            }
+
+            std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
+        }
+        std.debug.print("\n", .{});
+    }
+
+    // Reorder the elements belonging to the top and bottom regions so that,
+    // for 0 <= j < s.len - 1, (beg[s[j]] = beg[s[j+1]]) implies (end[j] >= end[j+1]).
+    // The paper merely says "this can obviously be done in linear time by
+    // straightforward use of a stack". This needs to be done by changing the
+    // order of elements in beg/end, but only relative to s: s will still
+    // reference the same set but the order they appear in will change.
+    // The "obvious" method for doing this is to push elements onto a stack
+    // while beg[s[j]] remains the same, then when it changes we iterate over
+    // the same elements of s in order and pop values onto them.
+    {
+        var top: usize = 0;
+        var curr_beg = beg[s[0]];
+        var s_start: usize = 0;
+        // std.debug.print("reordering\n", .{});
+        for (0..s.len) |j| {
+            // std.debug.print("{} (top = {}, curr_beg = {}, s_start = {}):\n", .{ j, top, curr_beg, s_start });
+            if (beg[s[j]] != curr_beg) {
+                // std.debug.print("dumping stack {any}\n", .{stack[0..top]});
+                for (s_start..j) |k| {
+                    top -= 1;
+                    end[s[k]] = stack[top];
+                }
+                curr_beg = beg[s[j]];
+                s_start = j;
+            }
+            stack[top] = end[s[j]];
+            top += 1;
+        }
+        // std.debug.print("dumping stack {any}\n", .{stack[0..top]});
+        for (s_start..s.len) |k| {
+            top -= 1;
+            end[s[k]] = stack[top];
+        }
+    }
+
+    {
+        std.debug.print("after sorting subsequences\n", .{});
+        std.debug.print("s* = ", .{});
+        var first = true;
+        for (s, 0..) |s_, i| {
+            if (first) {
+                first = false;
+            } else {
+                std.debug.print(", ", .{});
+            }
+
+            std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
+        }
+        std.debug.print("\n", .{});
+    }
+
+    // Partition s into two subsequences sub1[0..l1] and sub2[0..l2],
+    // such that end[sub1[0]] >= ... >= end[sub1[l1]]
+    // and end[sub2[0]] >= ... >= end[sub2[l2]]
+    const sub1, const sub2 = blk: {
+        var l1: usize = 0;
+        var l2: usize = 0;
+        {
+            var first_1 = true;
+            var first_2 = true;
+
+            for (s) |s_i| {
+                std.debug.print("s_i = {}; first_1 = {}; first_2 = {}; l1 = {}; l2 = {}\n", .{ s_i, first_1, first_2, l1, l2 });
+                if (first_1 or end[s_i] <= end[sub1_buffer[l1 - 1]]) {
+                    first_1 = false;
+                    sub1_buffer[l1] = s_i;
+                    l1 += 1;
+                } else if (first_2 or end[s_i] <= end[sub2_buffer[l2 - 1]]) {
+                    first_2 = false;
+                    sub2_buffer[l2] = s_i;
+                    l2 += 1;
+                } else break;
+            }
+        }
+        break :blk .{ sub1_buffer[0..l1], sub2_buffer[0..l2] };
+    };
+
+    {
+        std.debug.print("sub1 = {{ ", .{});
+        var first = true;
+        for (sub1) |sub1_| {
+            if (first) {
+                first = false;
+            } else {
+                std.debug.print(", ", .{});
+            }
+
+            std.debug.print("{}({}, {})", .{ sub1_, beg[sub1_], end[sub1_] });
+        }
+        std.debug.print(" }}\n", .{});
+    }
+    {
+        std.debug.print("sub2 = {{ ", .{});
+        var first = true;
+        for (sub2) |sub2_| {
+            if (first) {
+                first = false;
+            } else {
+                std.debug.print(", ", .{});
+            }
+
+            std.debug.print("{}({}, {})", .{ sub2_, beg[sub2_], end[sub2_] });
+        }
+        std.debug.print(" }}\n", .{});
+    }
+    {
+        printPaired(usize, usize, beg, end);
+        std.debug.print("\n", .{});
+    }
+
+    {
+        var k1: usize = 0;
+        var k2: usize = 0;
+        var k3: usize = 0;
+        for (0..n) |j| {
+            // Determine y[j]
+            std.debug.print("{} belongs to ", .{j});
+            if (sub1[k1] == j) {
+                // j belongs to the bottom region.
+                std.debug.print("bottom\n", .{});
+                y[sub1.len - k1 - 1] = j;
+                k1 += 1;
+            } else if (sub2[k2] == j) {
+                // j belongs to the top region.
+                std.debug.print("top\n", .{});
+                y[(n - sub2.len) + k2] = j;
+                k2 += 1;
+            } else {
+                // j belongs to the middle region.
+                std.debug.print("middle\n", .{});
+                y[sub1.len + k3] = j;
+                k3 += 1;
+            }
+            std.debug.print("y[{}] is now {}\n", .{ j, y[j] });
+        }
+    }
+}
+
+test testDoubleConvexity {
+    // Example from the paper using measurements from figure 2(b) (which is
+    // subtly different to 2(a) and 2(c)...)
+    const n = 14;
+    var beg = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
+    var end = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
+    var s_buffer: [n]usize = undefined;
+    var stack: [n]usize = undefined;
+    var sub1: [n]usize = undefined;
+    var sub2: [n]usize = undefined;
+    var y: [n]usize = undefined;
+    testDoubleConvexity(&beg, &end, &s_buffer, &stack, &sub1, &sub2, &y);
+    std.debug.print("{any}\n", .{y});
+    for (y) |y_| {
+        std.debug.print("{}: beg = {}, end = {}\n", .{ y_, beg[y_], end[y_] });
+    }
+}
+
+fn partitionSequenceIntoTwoNonIncreasingSubsequences(s: []usize, sub1: []usize, l1: *usize, sub2: []usize, l2: *usize) void {
+    l1.* = 0;
+    l2.* = 0;
+    sub1[0] = std.math.maxInt(usize);
+    sub2[0] = std.math.maxInt(usize);
+
+    for (s) |s_i| {
+        if (s_i <= sub1[l1.*]) {
+            l1.* += 1;
+            sub1[l1.*] = s_i;
+        } else if (s_i <= sub2[l2.*]) {
+            l2.* += 1;
+            sub2[l2.*] = s_i;
+        } else break;
+    }
+}
+
+fn printPaired(comptime T: type, comptime U: type, a: []T, b: []U) void {
+    var first = true;
+    std.debug.print("{{ ", .{});
+    for (a, b, 0..) |a_, b_, i| {
+        if (first) {
+            first = false;
+        } else {
+            std.debug.print(", ", .{});
+        }
+        std.debug.print("[{}]({}, {})", .{ i, a_, b_ });
+    }
+    std.debug.print(" }}", .{});
+}
