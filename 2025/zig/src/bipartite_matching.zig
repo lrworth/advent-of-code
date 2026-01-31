@@ -465,6 +465,12 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
     //     std.debug.print("\n", .{});
     // }
 
+    // The algorithm as written in the paper now says:
+    //   Relabel the elements of B so that, for 0 <= j < n,
+    //   (beg[j] == beg[j+1]) implies (end[j] >= end[j+1])
+    // and I cannot understand how we are to do this without corrupting the s
+    // which we have just constructed.
+
     // Reorder the elements belonging to the top and bottom regions so that,
     // for 0 <= j < s.len - 1, (beg[s[j]] = beg[s[j+1]]) implies (end[j] >= end[j+1]).
     // The paper merely says "this can obviously be done in linear time by
