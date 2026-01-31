@@ -411,14 +411,14 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
             };
         }
     };
-    printPaired(usize, usize, beg, end);
-    std.debug.print("\n", .{});
+    // printPaired(usize, usize, beg, end);
+    // std.debug.print("\n", .{});
 
     std.sort.pdqContext(0, n, SortBoth{ .beg = beg, .end = end });
 
-    std.debug.print("after sorting\n", .{});
-    printPaired(usize, usize, beg, end);
-    std.debug.print("\n", .{});
+    // std.debug.print("after sorting\n", .{});
+    // printPaired(usize, usize, beg, end);
+    // std.debug.print("\n", .{});
 
     // Find last segment jm of middle region.
     var jm: usize = 0;
@@ -426,7 +426,7 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         if (end[j] >= end[jm]) jm = j;
     }
 
-    std.debug.print("jm = {}\n", .{jm});
+    // std.debug.print("jm = {}\n", .{jm});
 
     // Extract the elements in the top and bottom regions, and the extremities
     // of the middle region, into s.
@@ -450,20 +450,20 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         break :blk s_buffer[0..l];
     };
 
-    {
-        std.debug.print("s* = ", .{});
-        var first = true;
-        for (s, 0..) |s_, i| {
-            if (first) {
-                first = false;
-            } else {
-                std.debug.print(", ", .{});
-            }
-
-            std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
-        }
-        std.debug.print("\n", .{});
-    }
+    // {
+    //     std.debug.print("s* = ", .{});
+    //     var first = true;
+    //     for (s, 0..) |s_, i| {
+    //         if (first) {
+    //             first = false;
+    //         } else {
+    //             std.debug.print(", ", .{});
+    //         }
+    //
+    //         std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
+    //     }
+    //     std.debug.print("\n", .{});
+    // }
 
     // Reorder the elements belonging to the top and bottom regions so that,
     // for 0 <= j < s.len - 1, (beg[s[j]] = beg[s[j+1]]) implies (end[j] >= end[j+1]).
@@ -500,21 +500,21 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         }
     }
 
-    {
-        std.debug.print("after sorting subsequences\n", .{});
-        std.debug.print("s* = ", .{});
-        var first = true;
-        for (s, 0..) |s_, i| {
-            if (first) {
-                first = false;
-            } else {
-                std.debug.print(", ", .{});
-            }
-
-            std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
-        }
-        std.debug.print("\n", .{});
-    }
+    // {
+    //     std.debug.print("after sorting subsequences\n", .{});
+    //     std.debug.print("s* = ", .{});
+    //     var first = true;
+    //     for (s, 0..) |s_, i| {
+    //         if (first) {
+    //             first = false;
+    //         } else {
+    //             std.debug.print(", ", .{});
+    //         }
+    //
+    //         std.debug.print("[{}]({})(({}, {}))", .{ i, s_, beg[s_], end[s_] });
+    //     }
+    //     std.debug.print("\n", .{});
+    // }
 
     // Partition s into two subsequences sub1[0..l1] and sub2[0..l2],
     // such that end[sub1[0]] >= ... >= end[sub1[l1]]
@@ -527,7 +527,7 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
             var first_2 = true;
 
             for (s) |s_i| {
-                std.debug.print("s_i = {}; first_1 = {}; first_2 = {}; l1 = {}; l2 = {}\n", .{ s_i, first_1, first_2, l1, l2 });
+                // std.debug.print("s_i = {}; first_1 = {}; first_2 = {}; l1 = {}; l2 = {}\n", .{ s_i, first_1, first_2, l1, l2 });
                 if (first_1 or end[s_i] <= end[sub1_buffer[l1 - 1]]) {
                     first_1 = false;
                     sub1_buffer[l1] = s_i;
@@ -542,38 +542,38 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         break :blk .{ sub1_buffer[0..l1], sub2_buffer[0..l2] };
     };
 
-    {
-        std.debug.print("sub1 = {{ ", .{});
-        var first = true;
-        for (sub1) |sub1_| {
-            if (first) {
-                first = false;
-            } else {
-                std.debug.print(", ", .{});
-            }
-
-            std.debug.print("{}({}, {})", .{ sub1_, beg[sub1_], end[sub1_] });
-        }
-        std.debug.print(" }}\n", .{});
-    }
-    {
-        std.debug.print("sub2 = {{ ", .{});
-        var first = true;
-        for (sub2) |sub2_| {
-            if (first) {
-                first = false;
-            } else {
-                std.debug.print(", ", .{});
-            }
-
-            std.debug.print("{}({}, {})", .{ sub2_, beg[sub2_], end[sub2_] });
-        }
-        std.debug.print(" }}\n", .{});
-    }
-    {
-        printPaired(usize, usize, beg, end);
-        std.debug.print("\n", .{});
-    }
+    // {
+    //     std.debug.print("sub1 = {{ ", .{});
+    //     var first = true;
+    //     for (sub1) |sub1_| {
+    //         if (first) {
+    //             first = false;
+    //         } else {
+    //             std.debug.print(", ", .{});
+    //         }
+    //
+    //         std.debug.print("{}({}, {})", .{ sub1_, beg[sub1_], end[sub1_] });
+    //     }
+    //     std.debug.print(" }}\n", .{});
+    // }
+    // {
+    //     std.debug.print("sub2 = {{ ", .{});
+    //     var first = true;
+    //     for (sub2) |sub2_| {
+    //         if (first) {
+    //             first = false;
+    //         } else {
+    //             std.debug.print(", ", .{});
+    //         }
+    //
+    //         std.debug.print("{}({}, {})", .{ sub2_, beg[sub2_], end[sub2_] });
+    //     }
+    //     std.debug.print(" }}\n", .{});
+    // }
+    // {
+    //     printPaired(usize, usize, beg, end);
+    //     std.debug.print("\n", .{});
+    // }
 
     {
         var k1: usize = 0;
@@ -581,24 +581,24 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         var k3: usize = 0;
         for (0..n) |j| {
             // Determine y[j]
-            std.debug.print("{} belongs to ", .{j});
+            // std.debug.print("{} belongs to ", .{j});
             if (sub1[k1] == j) {
                 // j belongs to the bottom region.
-                std.debug.print("bottom\n", .{});
+                // std.debug.print("bottom\n", .{});
                 y[sub1.len - k1 - 1] = j;
                 k1 += 1;
             } else if (sub2[k2] == j) {
                 // j belongs to the top region.
-                std.debug.print("top\n", .{});
+                // std.debug.print("top\n", .{});
                 y[(n - sub2.len) + k2] = j;
                 k2 += 1;
             } else {
                 // j belongs to the middle region.
-                std.debug.print("middle\n", .{});
+                // std.debug.print("middle\n", .{});
                 y[sub1.len + k3] = j;
                 k3 += 1;
             }
-            std.debug.print("y[{}] is now {}\n", .{ j, y[j] });
+            // std.debug.print("y[{}] is now {}\n", .{ j, y[j] });
         }
     }
 }
@@ -609,16 +609,24 @@ test testDoubleConvexity {
     const n = 14;
     var beg = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
     var end = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
-    var s_buffer: [n]usize = undefined;
-    var stack: [n]usize = undefined;
-    var sub1: [n]usize = undefined;
-    var sub2: [n]usize = undefined;
     var y: [n]usize = undefined;
-    testDoubleConvexity(&beg, &end, &s_buffer, &stack, &sub1, &sub2, &y);
-    std.debug.print("{any}\n", .{y});
-    for (y) |y_| {
-        std.debug.print("{}: beg = {}, end = {}\n", .{ y_, beg[y_], end[y_] });
+    {
+        var s_buffer: [n]usize = undefined;
+        var stack: [n]usize = undefined;
+        var sub1: [n]usize = undefined;
+        var sub2: [n]usize = undefined;
+        testDoubleConvexity(&beg, &end, &s_buffer, &stack, &sub1, &sub2, &y);
     }
+    const expected_beg = [n]usize{ 4, 3, 3, 2, 1, 0, 0, 1, 2, 2, 2, 2, 3, 4 };
+    const expected_end = [n]usize{ 5, 6, 6, 7, 7, 9, 10, 10, 10, 11, 11, 8, 8, 7 };
+    for (0..n) |i| {
+        try std.testing.expectEqual(expected_beg[i], beg[y[i]]);
+        try std.testing.expectEqual(expected_end[i], end[y[i]]);
+    }
+    // std.debug.print("{any}\n", .{y});
+    // for (y) |y_| {
+    //     std.debug.print("{}: beg = {}, end = {}\n", .{ y_, beg[y_], end[y_] });
+    // }
 }
 
 fn partitionSequenceIntoTwoNonIncreasingSubsequences(s: []usize, sub1: []usize, l1: *usize, sub2: []usize, l2: *usize) void {
