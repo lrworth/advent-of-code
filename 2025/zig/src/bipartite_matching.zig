@@ -2,6 +2,7 @@
 //! https://scispace.com/pdf/efficient-algorithms-for-finding-maximum-matchings-in-convex-411ieyldz5.pdf
 
 const std = @import("std");
+const deque = @import("./deque.zig");
 
 const Interval = struct { beg: usize, end: usize };
 const BipartiteGraphConvexOnA = struct {
@@ -744,34 +745,98 @@ fn printPaired(comptime T: type, comptime U: type, a: []T, b: []U) void {
     std.debug.print(" }}", .{});
 }
 
-// // G. Steiner, A Linear Time Algorithm for Maximum Matchings in Convex, Bipartite Graphs
-// const LinearTimeMatchingConvexBipartite = struct {
-//     /// Represents a V1-vertex by its interval of vertices in V2.
-//     const V2Interval = struct { a: usize, b: usize };
-//
-//     const Label = enum { uninitialised, meaningful };
-//
-//     /// Stage 1: Insertion of the vertices into an uninitialised table.
-//     /// `v2Intervals[n]` is the interval of V2-vertices for V1-vertex n.
-//     /// `stack and `labels` do not need to be initialised but must be the same length as `v2Intervals`.
-//     fn tableInsertion(v2Intervals: []const V2Interval, stack: []usize, labels: []Label) void {
-//         const n = v2Intervals.len;
-//         std.debug.assert(stack.len == n);
-//         std.debug.assert(labels.len == n);
-//
-//         // The paper says "uninitialised table" but here we are initialising it.
-//         for (labels) |*t| {
-//             t.* = .uninitialised;
-//         }
-//
-//         var count: usize = 0;
-//         for (v2Intervals, labels, 0..) |interval, *label, i| {
-//             const a_i = interval.a;
-//             stack[count] = a_i;
-//             if (label.* != .meaningful) {
-//                 label.* = .meaningful;
-//                 vertex_set[i]
-//             }
-//         }
-//     }
-// };
+fn isBegIncreasingEndNonincreasing(beg: []const usize, end: []const usize) bool {
+    const n = beg.len;
+    std.debug.assert(end.len == n);
+    for (0..n - 1) |j| {
+        if (beg[j] < beg[j + 1] or (beg[j] == beg[j + 1] and end[j] >= end[j + 1])) {
+            continue;
+        } else {
+            return false;
+        }
+    } else return true;
+}
+
+/// TODO: do not use heap allocation. We know how big the queue has to be.
+pub fn findMaximumMatchingDoublyConvexBipartite(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, y: []const usize, match: []usize) !void {
+    const n = beg.len;
+    std.debug.assert(end.len == n);
+    std.debug.assert(y.len == n);
+    std.debug.assert(isBegIncreasingEndNonincreasing(beg, end));
+    const m = match.len;
+
+    var deq = deque.Deque(usize).empty;
+    defer deq.deinit(gpa);
+
+    var j: usize = 0;
+    for (0..m) |i| {
+        // Find element in B to be matched to i in A.
+        while (j < n and beg[j] == i) {
+            // Insert j into deq.
+            if (deq.front()) |top| {
+                if (y[j] > y[top]) {
+                    try deq.pushFront(gpa, j);
+                } else {
+                    try deq.pushBack(gpa, j);
+                }
+            } else {
+                try deq.pushBack(gpa, j);
+            }
+            j += 1;
+        }
+        if (deq.front()) |top| {
+            // There was a front so there must be a back.
+            const bottom = deq.back().?;
+            if (end[top] < end[bottom]) {
+                match[i] = top;
+                _ = deq.popFront();
+            } else {
+                match[i] = bottom;
+                _ = deq.popBack();
+            }
+        } else {
+            // i unmatched.
+            match[i] = std.math.maxInt(usize);
+        }
+        while (deq.front()) |top| {
+            if (end[top] == i) {
+                _ = deq.popFront();
+            } else {
+                break;
+            }
+        }
+        while (deq.back()) |bottom| {
+            if (end[bottom] == i) {
+                _ = deq.popBack();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+test findMaximumMatchingDoublyConvexBipartite {
+    const gpa = std.testing.allocator;
+
+    // Example from the paper using measurements from figure 2(b) (which is
+    // subtly different to 2(a) and 2(c)...)
+    const n = 14;
+    var beg = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
+    var end = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
+    var y: [n]usize = undefined;
+    {
+        var s_buffer: [n]usize = undefined;
+        var stack: [n]usize = undefined;
+        var beg_relabelled: [n]usize = undefined;
+        var end_relabelled: [n]usize = undefined;
+        var sub1: [n]usize = undefined;
+        var sub2: [n]usize = undefined;
+        testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
+    }
+
+    var match: [n]usize = undefined;
+
+    try findMaximumMatchingDoublyConvexBipartite(gpa, &beg, &end, &y, &match);
+    const expected_match = [_]usize{ 1, 3, 8, 11, 13, 10, 12, 9, 7, 6, 5, 4, std.math.maxInt(usize), std.math.maxInt(usize) };
+    try std.testing.expectEqualDeep(&expected_match, &match);
+}
