@@ -389,6 +389,9 @@ test {
 /// `y` is the output. It does not need to be initialised.
 ///
 /// TODO: There are a number of deficiencies with this:
+/// - It should assert its postcondition, that beg/end have been ordered as
+///   intended and that the resultant ordering in y produces the kind of shape we
+///   are after.
 /// - Surely we don't need all of those temporary buffers to be passed in.
 /// - We only need to run a full sorting algorithm once and the other two can
 ///   be replaced with an interval-reversing algorithm, since the new ordering
