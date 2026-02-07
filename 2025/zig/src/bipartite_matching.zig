@@ -387,6 +387,18 @@ test {
 /// Size of `beg`, `end`, `s_buffer`, `stack`, `beg_relabelled`, `end_relabelled`, `sub1`, `sub2`, and `y` are n.
 /// `beg` and `end` are reordered in-place. `s_buffer`, `stack`, `sub1`, and `sub2` are working buffers which do not need to be initialised.
 /// `y` is the output. It does not need to be initialised.
+///
+/// TODO: There are a number of deficiencies with this:
+/// - Surely we don't need all of those temporary buffers to be passed in.
+/// - We only need to run a full sorting algorithm once and the other two can
+///   be replaced with an interval-reversing algorithm, since the new ordering
+///   is trivial given the original sorting.
+/// - It is weirdly called "test" but does not produce a decision. This is the
+///   original naming from the paper.
+/// - I have left the commented-out debugging code there because it is so hard
+///   to write. We should have a better way of logging progress through the
+///   algorithm. This would be useful if we ever want to produce a
+///   visualisation of the operation of the algorithm.
 pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack: []usize, beg_relabelled: []usize, end_relabelled: []usize, sub1_buffer: []usize, sub2_buffer: []usize, y: []usize) void {
     const n: usize = beg.len;
     std.debug.assert(end.len == n);
@@ -495,6 +507,7 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
                 };
             }
         };
+        // TODO: This should not need a full sort; we only need to reverse intervals having the same value for beg.
         std.sort.pdqContext(0, n, SortStackIndices{ .stack = stack, .beg = beg, .end = end });
 
         // Sort {beg,end} per the ordering in stack.
@@ -545,47 +558,6 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
     //     std.debug.print("\n", .{});
     // }
 
-    // The algorithm as written in the paper now says:
-    //   Relabel the elements of B so that, for 0 <= j < n,
-    //   (beg[j] == beg[j+1]) implies (end[j] >= end[j+1])
-    // but it doesn't describe how we are to do this without corrupting the s
-    // which we have just constructed.
-    // Some ideas:
-    // - Make `s` contain indices into an intermediary array of B indices - `int[j] = b[k]` - and when reordering b we rewrite the indices.
-    //   But it is not clear how to do this.
-    // - During "relabeling" we sort a separate array of indices into b, and after this whenever beg/end is used, we first dereference this array.
-    // Let's take the second approach.
-
-    // {
-    //     for (beg_relabelled, end_relabelled, 0..) |*beg_relabelled_, *end_relabelled_, i| {
-    //         beg_relabelled_.* = i;
-    //         end_relabelled_.* = i;
-    //     }
-    //
-    //     const SortBoth2 = struct {
-    //         beg: []usize,
-    //         beg_relabelled: []usize,
-    //         end: []usize,
-    //         end_relabelled: []usize,
-    //
-    //         pub fn swap(self: @This(), a: usize, b: usize) void {
-    //             std.mem.swap(usize, &self.beg[a], &self.beg[b]);
-    //             std.mem.swap(usize, &self.end[a], &self.end[b]);
-    //         }
-    //         pub fn lessThan(self: @This(), a: usize, b: usize) bool {
-    //             return switch (std.math.order(self.beg[beg_relabelled[a]], self.beg[beg_relabelled[b]])) {
-    //                 .gt => false,
-    //                 .lt => true,
-    //                 .eq => self.end[self.end_relabelled[a]] > self.end[self.end_relabelled[b]],
-    //             };
-    //         }
-    //     };
-    //     std.sort.pdqContext(0, n, SortBoth2{ .beg = beg, .beg_relabelled = beg_relabelled, .end = end, .end_relabelled = end_relabelled });
-    // }
-
-    // Actually, let's ignore the problem for a moment, in case they're actually right about this.
-    //
-
     // Reorder s so that, for 0 <= p < s.len,
     // (beg[s[p]] == beg[s[p+1]]) implies (end[s[p]] >= end[s[p+1]])
     {
@@ -606,43 +578,11 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
                 };
             }
         };
+        // TODO: see above. This should not require a full sorting algorithm
+        // because we are only reversing intervals having the same value of
+        // beg.
         std.sort.pdqContext(0, s.len, SortS{ .s = s, .beg = beg, .end = end });
     }
-
-    // // Reorder the elements belonging to the top and bottom regions so that,
-    // // for 0 <= j < s.len - 1, (beg[s[j]] = beg[s[j+1]]) implies (end[j] >= end[j+1]).
-    // // The paper merely says "this can obviously be done in linear time by
-    // // straightforward use of a stack". This needs to be done by changing the
-    // // order of elements in beg/end, but only relative to s: s will still
-    // // reference the same set but the order they appear in will change.
-    // // The "obvious" method for doing this is to push elements onto a stack
-    // // while beg[s[j]] remains the same, then when it changes we iterate over
-    // // the same elements of s in order and pop values onto them.
-    // {
-    //     var top: usize = 0;
-    //     var curr_beg = beg[s[0]];
-    //     var s_start: usize = 0;
-    //     // std.debug.print("reordering\n", .{});
-    //     for (0..s.len) |j| {
-    //         // std.debug.print("{} (top = {}, curr_beg = {}, s_start = {}):\n", .{ j, top, curr_beg, s_start });
-    //         if (beg[s[j]] != curr_beg) {
-    //             // std.debug.print("dumping stack {any}\n", .{stack[0..top]});
-    //             for (s_start..j) |k| {
-    //                 top -= 1;
-    //                 end[s[k]] = stack[top];
-    //             }
-    //             curr_beg = beg[s[j]];
-    //             s_start = j;
-    //         }
-    //         stack[top] = end[s[j]];
-    //         top += 1;
-    //     }
-    //     // std.debug.print("dumping stack {any}\n", .{stack[0..top]});
-    //     for (s_start..s.len) |k| {
-    //         top -= 1;
-    //         end[s[k]] = stack[top];
-    //     }
-    // }
 
     // {
     //     std.debug.print("after sorting s\n", .{});
@@ -719,7 +659,6 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
     //     std.debug.print("\n", .{});
     // }
 
-    // std.debug.panic("WIP", .{});
     {
         // Bottom region counter.
         var k1: usize = 0;
@@ -752,34 +691,6 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
 }
 
 test testDoubleConvexity {
-    // // Example from the paper using measurements from figure 2(b) (which is
-    // // subtly different to 2(a) and 2(c)...)
-    // const n = 9;
-    // var beg = [n]usize{ 0, 0, 0, 1, 1, 2, 3, 3, 5 };
-    // var end = [n]usize{ 1, 5, 6, 3, 4, 8, 7, 8, 7 };
-    // var y: [n]usize = undefined;
-    // {
-    //     var s_buffer: [n]usize = undefined;
-    //     var stack: [n]usize = undefined;
-    //     var beg_relabelled: [n]usize = undefined;
-    //     var end_relabelled: [n]usize = undefined;
-    //     var sub1: [n]usize = undefined;
-    //     var sub2: [n]usize = undefined;
-    //     testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
-    // }
-    // // const expected_beg = [n]usize{ 4, 3, 3, 2, 1, 0, 0, 1, 2, 2, 2, 2, 3, 4 };
-    // // const expected_end = [n]usize{ 5, 6, 6, 7, 7, 9, 10, 10, 10, 11, 11, 8, 8, 7 };
-    // // for (0..n) |i| {
-    // //     try std.testing.expectEqual(expected_beg[i], beg[y[i]]);
-    // //     try std.testing.expectEqual(expected_end[i], end[y[i]]);
-    // // }
-    // // std.debug.print("{any}\n", .{y});
-    // // for (y) |y_| {
-    // //     std.debug.print("{}: beg = {}, end = {}\n", .{ y_, beg[y_], end[y_] });
-    // // }
-
-    // --------------------------------------------------
-
     // Example from the paper using measurements from figure 2(b) (which is
     // subtly different to 2(a) and 2(c)...)
     const n = 14;
@@ -795,19 +706,8 @@ test testDoubleConvexity {
         var sub2: [n]usize = undefined;
         testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
     }
-    // std.debug.print("final y = {any}", .{&y});
     const expected_y = [n]usize{ 6, 5, 7, 4, 10, 8, 9, 11, 3, 12, 2, 1, 13, 0 };
     try std.testing.expectEqualDeep(&expected_y, &y);
-    // const expected_beg = [n]usize{ 4, 3, 3, 2, 1, 0, 0, 1, 2, 2, 2, 2, 3, 4 };
-    // const expected_end = [n]usize{ 5, 6, 6, 7, 7, 9, 10, 10, 10, 11, 11, 8, 8, 7 };
-    // for (0..n) |i| {
-    //     try std.testing.expectEqual(expected_beg[i], beg[y[i]]);
-    //     try std.testing.expectEqual(expected_end[i], end[y[i]]);
-    // }
-    // std.debug.print("{any}\n", .{y});
-    // for (y) |y_| {
-    //     std.debug.print("{}: beg = {}, end = {}\n", .{ y_, beg[y_], end[y_] });
-    // }
 }
 
 fn partitionSequenceIntoTwoNonIncreasingSubsequences(s: []usize, sub1: []usize, l1: *usize, sub2: []usize, l2: *usize) void {
