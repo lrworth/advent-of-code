@@ -757,6 +757,16 @@ fn isBegIncreasingEndNonincreasing(beg: []const usize, end: []const usize) bool 
     } else return true;
 }
 
+fn isNonDecreasing(xs: []const usize) bool {
+    for (0..xs.len - 1) |i| {
+        if (xs[i] <= xs[i + 1]) {
+            continue;
+        } else {
+            return false;
+        }
+    } else return true;
+}
+
 /// TODO: do not use heap allocation. We know how big the queue has to be.
 pub fn findMaximumMatchingDoublyConvexBipartite(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, y: []const usize, match: []usize) !void {
     const n = beg.len;
@@ -839,4 +849,252 @@ test findMaximumMatchingDoublyConvexBipartite {
     try findMaximumMatchingDoublyConvexBipartite(gpa, &beg, &end, &y, &match);
     const expected_match = [_]usize{ 1, 3, 8, 11, 13, 10, 12, 9, 7, 6, 5, 4, std.math.maxInt(usize), std.math.maxInt(usize) };
     try std.testing.expectEqualDeep(&expected_match, &match);
+}
+
+// fn invertDoublyConvex(gpa: std.mem.Allocator, beg_b: []const usize, end_b: []const usize, beg_a: []usize, end_a: []usize) !bool {
+//     const n = beg_b.len;
+//     std.debug.assert(end_b.len == n);
+//
+//     const m = beg_a.len;
+//     std.debug.assert(end_a.len == m);
+//
+//     const Edge = struct { usize, usize };
+//     var edges = std.ArrayList(Edge).empty;
+//     defer edges.deinit(gpa);
+//
+//     for (0..n) |b| {
+//         for (beg_b[b]..end_b[b]) |a| {
+//             try edges.append(gpa, .{ a, b });
+//         }
+//     }
+//
+//     const SortA = struct {
+//         pub fn lessThan(_: void, lhs: Edge, rhs: Edge) bool {
+//             return if (lhs[0] < rhs[0])
+//                 true
+//             else
+//                 lhs[1] < rhs[1];
+//         }
+//     };
+//
+//     std.sort.pdq(Edge, edges.items, {}, SortA.lessThan);
+//
+//     {
+//         const State = struct { a: usize, b_beg: usize, b_end: usize };
+//         var state: ?State = null;
+//         for (edges.items) |edge| {
+//             if (state) |*state_| {
+//                 if (edge[0] == state_.a) {
+//                     if (edge[1] == state_.b_end + 1) {
+//                         state_.b_end += 1;
+//                     } else {
+//                         return false;
+//                     }
+//                 } else {
+//                     beg_a[state_.a] = state_.b_beg;
+//                     end_a[state_.a] = state_.b_end;
+//                 }
+//             } else {
+//                 std.debug.assert(edge[0] < m);
+//                 state = .{ .a = edge[0], .b_beg = edge[1], .b_end = edge[1] };
+//             }
+//         }
+//         if (state) |state_| {
+//             beg_a[state_.a] = state_.b_beg;
+//             end_a[state_.a] = state_.b_end;
+//         }
+//     }
+//     return true;
+// }
+//
+// test invertDoublyConvex {
+//     const gpa = std.testing.allocator;
+//     const n = 14;
+//     const beg_b = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
+//     const end_b = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
+//     var beg_a: [n]usize = undefined;
+//     var end_a: [n]usize = undefined;
+//
+//     try std.testing.expectEqual(true, invertDoublyConvex(gpa, &beg_b, &end_b, &beg_a, &end_a));
+//
+//     printPaired(usize, usize, &beg_a, &end_a);
+//     std.debug.print("\n", .{});
+//
+//     // const expected_beg_a = [n]usize{};
+//     // const expected_beg_b = [n]usize{};
+//     //
+//     // std.testing.expectEqualDeep(
+// }
+
+test "findMaximumMatchingDoublyConvexBipartite extensionally equal to maximumMatchingGloverSimple for doubly convex bipartite graphs" {
+    const IntervalIteratorList = iteratorList(IntervalIterator, Interval);
+    const max_m = 5;
+    const max_n = 5;
+    inline for (1..max_m) |m| {
+        inline for (1..max_n) |n| {
+            // std.debug.print("m={} n={}\n", .{ m, n });
+
+            var iterators: [n]IntervalIterator = undefined;
+            for (&iterators) |*it| it.* = .{ .max = m - 1 };
+            var values: [n]Interval = undefined;
+            var iterator_list = IntervalIteratorList.init(&iterators, &values);
+            while (true) : (if (!iterator_list.next()) break) {
+                // `values` is the next list of intervals to check.
+
+                // std.debug.print("values={any}\n", .{&values});
+
+                var beg: [n]usize = undefined;
+                var end: [n]usize = undefined;
+                var ordbeg: [n]usize = undefined;
+                var queue_buffer: [n]usize = undefined;
+                var match: [m]?usize = undefined;
+                for (values, &beg, &end) |v, *b, *e| {
+                    b.* = v.beg;
+                    e.* = v.end;
+                }
+
+                var simple_b: [n]?Interval = undefined;
+                for (values, &simple_b) |v, *b| {
+                    b.* = v;
+                }
+                var simple = BipartiteGraphConvexOnA{ .a_count = m, .b = &simple_b };
+
+                const glover = try simple.maximumMatchingGloverSimple(std.testing.allocator);
+                defer std.testing.allocator.free(glover);
+                maximumMatchingFast(&beg, &end, &ordbeg, &queue_buffer, &match);
+
+                var glover_cardinality: usize = 0;
+                for (glover) |glover_| {
+                    if (glover_) |_| glover_cardinality += 1;
+                }
+
+                var match_cardinality: usize = 0;
+                for (match) |match_| {
+                    if (match_) |_| match_cardinality += 1;
+                }
+
+                // const LessThanFn = struct {
+                //     fn call(_: void, lhs: ?usize, rhs: ?usize) bool {
+                //         if (lhs) |lhs_| {
+                //             return if (rhs) |rhs_|
+                //                 lhs_ < rhs_
+                //             else
+                //                 false;
+                //         } else {
+                //             return if (rhs) |_| true else false;
+                //         }
+                //     }
+                // };
+
+                // std.mem.sort(?usize, glover, {}, LessThanFn.call);
+                // std.mem.sort(?usize, &match, {}, LessThanFn.call);
+
+                // std.debug.print("glover={any}\n", .{glover});
+                // std.debug.print("match={any}\n", .{&match});
+                try std.testing.expectEqual(glover_cardinality, match_cardinality);
+            }
+        }
+    }
+}
+
+// TODO: the stack return pointer thing is silly, and so is allocating a queue.
+pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, match: []const usize, stack: *deque.Deque(usize)) !void {
+    const n = beg.len;
+    std.debug.assert(end.len == n);
+    std.debug.assert(isNonDecreasing(beg));
+    // const m = match.len;
+
+    // TODO find a fast way to construct this.
+    @breakpoint();
+    var queue = deque.Deque(usize).empty;
+    defer queue.deinit(gpa);
+    for (0..n) |j| {
+        if (std.mem.indexOfScalar(usize, match, j)) |_| {} else {
+            try queue.pushBack(gpa, j);
+        }
+    }
+
+    stack.* = .empty;
+    try stack.pushBack(gpa, std.math.maxInt(usize));
+
+    @breakpoint();
+    while (queue.popFront()) |j| {
+        // Find vertices reachable from first(queue).
+        if (stack.back().? == std.math.maxInt(usize) or end[j] > stack.back().?) {
+            // New vertices to be scanned.
+            var l = end[j] + 1;
+            var lower = beg[j];
+            var u = end[j];
+            var upper = end[j];
+            std.debug.print("beginning of new verts: l={} lower={} u={} upper={}\n", .{ l, lower, u, upper });
+
+            while (true) : (if (l == lower and u == upper) break) {
+                // Extend interval of vertices reached from j.
+                while (l > lower) {
+                    // Scan downward.
+                    l -= 1;
+                    if (match[l] != std.math.maxInt(usize)) {
+                        std.debug.print("scan downward: match[l]={} lower={} beg[match[l]]={} upper={} end[match[l]]={}\n", .{ match[l], lower, beg[match[l]], upper, end[match[l]] });
+                        // l is matched.
+                        lower = @min(lower, beg[match[l]]);
+                        upper = @max(upper, end[match[l]]);
+                    }
+                    if (stack.back().? != std.math.maxInt(usize) and l < stack.back().? + 1) {
+                        // Skip interval. (TODO: it is super weird popping twice. can we store a better structure)
+                        l = stack.popBack().?;
+                        l = stack.popBack().?;
+                        lower = @min(lower, l);
+                    }
+                }
+                while (u < upper) {
+                    // Scan upward.
+                    u += 1;
+                    if (match[u] != std.math.maxInt(usize)) {
+                        // u is matched.
+                        lower = @min(lower, beg[match[u]]);
+                        upper = @min(upper, end[match[u]]);
+                    }
+                }
+                std.debug.print("j={} l={} lower={} u={} upper={}\n", .{ j, l, lower, u, upper });
+            }
+            try stack.pushBack(gpa, lower);
+            try stack.pushBack(gpa, upper);
+        }
+    }
+}
+
+test findMaximumIndependentSet {
+    const gpa = std.testing.allocator;
+
+    // Example from the paper using measurements from figure 2(b) (which is
+    // subtly different to 2(a) and 2(c)...)
+    const n = 14;
+    var beg = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
+    var end = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
+    var y: [n]usize = undefined;
+    {
+        var s_buffer: [n]usize = undefined;
+        var stack: [n]usize = undefined;
+        var beg_relabelled: [n]usize = undefined;
+        var end_relabelled: [n]usize = undefined;
+        var sub1: [n]usize = undefined;
+        var sub2: [n]usize = undefined;
+        testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
+    }
+
+    var match: [n]usize = undefined;
+
+    try findMaximumMatchingDoublyConvexBipartite(gpa, &beg, &end, &y, &match);
+
+    var stack: deque.Deque(usize) = undefined;
+    defer stack.deinit(gpa);
+    try findMaximumIndependentSet(gpa, &beg, &end, &match, &stack);
+
+    {
+        std.debug.print("stack:\n", .{});
+        var it = stack.iterator();
+        while (it.next()) |s| {
+            std.debug.print("{}\n", .{s});
+        }
+    }
 }
