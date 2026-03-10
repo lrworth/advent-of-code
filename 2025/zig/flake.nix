@@ -19,6 +19,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShellNoCC {
           packages = [
+            pkgs.lldb
             pkgs.samply
             pkgs.zig
             pkgs.zls

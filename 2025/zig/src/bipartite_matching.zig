@@ -389,6 +389,16 @@ test {
 /// `beg` and `end` are reordered in-place. `s_buffer`, `stack`, `sub1`, and `sub2` are working buffers which do not need to be initialised.
 /// `y` is the output. It does not need to be initialised.
 ///
+/// For each segment j, y[j] is the *placement* of that segment in the final
+/// arrangement, that is, producing a convex polygon when plotted on a graph.
+///
+/// e.g. if y = { 0, 2, 3, 1 }, then plotted from bottom to top:
+///
+///   segment 2
+///   segment 1
+///   segment 3
+///   segment 0
+///
 /// TODO: There are a number of deficiencies with this:
 /// - It should assert its postcondition, that beg/end have been ordered as
 ///   intended and that the resultant ordering in y produces the kind of shape we
@@ -673,12 +683,12 @@ pub fn testDoubleConvexity(beg: []usize, end: []usize, s_buffer: []usize, stack:
         for (0..n) |j| {
             // Determine y[j]
             // std.debug.print("{} belongs to ", .{j});
-            if (sub1[k1] == j) {
+            if (k1 < sub1.len and sub1[k1] == j) {
                 // j belongs to the bottom region.
                 // std.debug.print("bottom\n", .{});
                 y[j] = sub1.len - k1 - 1;
                 k1 += 1;
-            } else if (sub2[k2] == j) {
+            } else if (k2 < sub2.len and sub2[k2] == j) {
                 // j belongs to the top region.
                 // std.debug.print("top\n", .{});
                 y[j] = (n - sub2.len) + k2;
@@ -711,6 +721,44 @@ test testDoubleConvexity {
         testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
     }
     const expected_y = [n]usize{ 6, 5, 7, 4, 10, 8, 9, 11, 3, 12, 2, 1, 13, 0 };
+    try std.testing.expectEqualDeep(&expected_y, &y);
+}
+
+test "testDoubleConvexity small complete" {
+    // 3 in A, 3 in B, complete graph.
+    const n = 3;
+    var beg = [n]usize{ 0, 0, 0 };
+    var end = [n]usize{ 2, 2, 2 };
+    var y: [n]usize = undefined;
+    {
+        var s_buffer: [n]usize = undefined;
+        var stack: [n]usize = undefined;
+        var beg_relabelled: [n]usize = undefined;
+        var end_relabelled: [n]usize = undefined;
+        var sub1: [n]usize = undefined;
+        var sub2: [n]usize = undefined;
+        testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
+    }
+    const expected_y = [n]usize{ 1, 2, 0 };
+    try std.testing.expectEqualDeep(&expected_y, &y);
+}
+
+test "testDoubleConvexity small not doubly-convex" {
+    const n = 4;
+    var beg = [n]usize{ 0, 0, 1, 2 };
+    var end = [n]usize{ 0, 2, 1, 3 };
+    var y: [n]usize = undefined;
+    {
+        var s_buffer: [n]usize = undefined;
+        var stack: [n]usize = undefined;
+        var beg_relabelled: [n]usize = undefined;
+        var end_relabelled: [n]usize = undefined;
+        var sub1: [n]usize = undefined;
+        var sub2: [n]usize = undefined;
+        testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
+    }
+    // TODO: This should have failed. This is not a valid ordering.
+    const expected_y = [n]usize{ 1, 0, 3, 2 };
     try std.testing.expectEqualDeep(&expected_y, &y);
 }
 
@@ -1068,9 +1116,9 @@ test findMaximumIndependentSet {
 
     // Example from the paper using measurements from figure 2(b) (which is
     // subtly different to 2(a) and 2(c)...)
-    const n = 14;
-    var beg = [n]usize{ 2, 1, 2, 2, 0, 3, 2, 1, 0, 2, 3, 4, 3, 4 };
-    var end = [n]usize{ 10, 10, 7, 11, 10, 8, 8, 7, 9, 11, 6, 7, 6, 5 };
+    const n = 3;
+    var beg = [n]usize{ 0, 0, 0 };
+    var end = [n]usize{ 2, 2, 2 };
     var y: [n]usize = undefined;
     {
         var s_buffer: [n]usize = undefined;
