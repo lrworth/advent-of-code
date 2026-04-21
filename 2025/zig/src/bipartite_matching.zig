@@ -1044,7 +1044,41 @@ test "findMaximumMatchingDoublyConvexBipartite extensionally equal to maximumMat
     }
 }
 
+// Algorithm 4 in the paper
+// 1. Let A and B be the vertices in the bipartite graph, E be the edges, and M⊂E be a maximum matching.
+// 2. Direct every edge e∈M from A to B, and any e∈(E-M) from B to A.
+// 3. Let B_0 denote the set of unmatched vertices in B - that is, the vertices touching no edge in M.
+// 4. Find the sets A_1⊆A and B_1 (B_0⊆B_1⊆B) of vertices reachable from B_0 following the directed edges.
+// 5. Construct the maximum independent set as I = B_1∪(A-A_1).
+//
+// Thus we need to find all vertices in G reachable from B_0. When G is convex, this can be obtained in O(m+n) time.
+//
+// Because G i convex, edges are represented by intervals: the vertices in A connected to some b∈B are represented by A[beg[b]..end[b]].
+// The maximum matching has chosen one edge from this interval for each, so for all a∈A, match[a]∈B is the element matched with that element in the maximum matching.
+//
+// To do this:
+// 1. We assume the elements of B are ordered so that beg[i]≤beg[i+1].
+// 2. We iterate over elements b∈B_0 in ascending order, building up an "extended
+//    interval" A*(b) of elements of A reachable from b. We call this an "extended interval"
+//    because we start with interval A(b) of elements reachable by following one
+//    edge from b, and as we follow edges from that set back to B and then back to
+//    A, we necessarily find overlaps with that interval and we extend it
+//    either direction to include the expanded interval. This is because G is
+//    convex.
+// 3. For a given b∈B, we alternate between decreasing and increasing traversal over A*(b).
+// 3a. First, set A*(b) to A(b). Start at the maximum element a.
+// 3b. For this element, if there is an element match[a]∈B, then expand A*(b) to include A(match[a]).
+// 3c. Repeat 3b with the next lowest element in A*(b), if there was one.
+// 3d. Once we have expanded with the lowest element in A*(b), begin from the element above where we were.
+// 3e. Repeat 3b and 3c except incrementing the element of A*(b) we are operating on.
+// 3f. Once we hit the top, if there are new elements at the bottom of A*(b), operate on those; then if there are new elements at the top, operate on those; and so on.
+// 3g. Once we have stopped adding elements to A*(b), push the endpoints of A*(b) onto a stack. This stack should be checked during downward traversal to ensure we do not double-process elements of A. If the interval does meet another interval, the two intervals can be combined.
+//
 // TODO: the stack return pointer thing is silly, and so is allocating a queue.
+//
+// stack becomes a sequence of [i_1, e_1, i_2, e_2, ...] of start and end of
+// intervals in A representing the set of vertices reachable from B_0 (i.e.
+// A_1). B_1 can be found by following the matched edges in A_1.
 pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, match: []const usize, stack: *std.Deque(usize)) !void {
     const n = beg.len;
     std.debug.assert(end.len == n);
@@ -1061,48 +1095,56 @@ pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end
         }
     }
 
+    // std.debug.print("queue {any}", .{queue.buffer});
     stack.* = .empty;
-    try stack.pushBack(gpa, std.math.maxInt(usize));
 
     // @breakpoint();
     while (queue.popFront()) |j| {
         // Find vertices reachable from first(queue).
-        if (stack.back().? == std.math.maxInt(usize) or end[j] > stack.back().?) {
+        if (if (stack.back()) |t| end[j] > t else true) {
             // New vertices to be scanned.
+            // l and u are pointers used in scanning; they go downward and upward respectively.
             var l = end[j] + 1;
-            var lower = beg[j];
             var u = end[j];
+            // lower and upper denote the current boundaires of the extended interval being constructed. They start out as the interval of edges adjacent to j.
+            var lower = beg[j];
             var upper = end[j];
-            std.debug.print("beginning of new verts: l={} lower={} u={} upper={}\n", .{ l, lower, u, upper });
+            // std.debug.print("beginning of new verts: [l,u]=[{},{}] [lower,upper]=[{},{}]\n", .{ l, u, lower, upper });
 
-            while (true) : (if (l == lower and u == upper) break) {
-                // Extend interval of vertices reached from j.
+            // Extend interval of vertices reached from j.
+            while (true) : (if (l == lower and u == upper)
+                // l and u, the scanning pointers, have reached the endpoints
+                // of the extended interval, so we have finished extending it.
+                break)
+            {
+                // Scan downward.
                 while (l > lower) {
-                    // Scan downward.
                     l -= 1;
                     if (match[l] != std.math.maxInt(usize)) {
-                        std.debug.print("scan downward: match[l]={} lower={} beg[match[l]]={} upper={} end[match[l]]={}\n", .{ match[l], lower, beg[match[l]], upper, end[match[l]] });
                         // l is matched.
+                        // std.debug.print("scan downward: match[l]={} lower={} beg[match[l]]={} upper={} end[match[l]]={}\n", .{ match[l], lower, beg[match[l]], upper, end[match[l]] });
                         lower = @min(lower, beg[match[l]]);
                         upper = @max(upper, end[match[l]]);
                     }
-                    if (stack.back().? != std.math.maxInt(usize) and l < stack.back().? + 1) {
-                        // Skip interval. (TODO: it is super weird popping twice. can we store a better structure)
+                    if (if (stack.back()) |t| l < t + 1 else false) {
+                        // The l pointer has entered the range of the previous extended interval. We pop that interval, then act like l and lower are at its lower end.
+                        // (TODO: it is weird and inefficient popping twice. We should use an interval struct and just pop one of them.)
                         l = stack.popBack().?;
                         l = stack.popBack().?;
                         lower = @min(lower, l);
                     }
                 }
+
+                // Scan upward.
                 while (u < upper) {
-                    // Scan upward.
                     u += 1;
                     if (match[u] != std.math.maxInt(usize)) {
                         // u is matched.
                         lower = @min(lower, beg[match[u]]);
-                        upper = @min(upper, end[match[u]]);
+                        upper = @max(upper, end[match[u]]);
                     }
                 }
-                std.debug.print("j={} l={} lower={} u={} upper={}\n", .{ j, l, lower, u, upper });
+                // std.debug.print("j={} l={} lower={} u={} upper={}\n", .{ j, l, lower, u, upper });
             }
             try stack.pushBack(gpa, lower);
             try stack.pushBack(gpa, upper);
@@ -1115,9 +1157,10 @@ test findMaximumIndependentSet {
 
     // Example from the paper using measurements from figure 2(b) (which is
     // subtly different to 2(a) and 2(c)...)
-    const n = 3;
-    var beg = [n]usize{ 0, 0, 0 };
-    var end = [n]usize{ 2, 2, 2 };
+    const m = 3;
+    const n = 2;
+    var beg = [n]usize{ 0, 2 };
+    var end = [n]usize{ 1, 2 };
     var y: [n]usize = undefined;
     {
         var s_buffer: [n]usize = undefined;
@@ -1129,9 +1172,11 @@ test findMaximumIndependentSet {
         testDoubleConvexity(&beg, &end, &s_buffer, &stack, &beg_relabelled, &end_relabelled, &sub1, &sub2, &y);
     }
 
-    var match: [n]usize = undefined;
+    var match: [m]usize = undefined;
 
     try findMaximumMatchingDoublyConvexBipartite(gpa, &beg, &end, &y, &match);
+
+    std.debug.print("match: {any}\n", .{match});
 
     var stack: std.Deque(usize) = undefined;
     defer stack.deinit(gpa);
@@ -1142,6 +1187,33 @@ test findMaximumIndependentSet {
         var it = stack.iterator();
         while (it.next()) |s| {
             std.debug.print("{}\n", .{s});
+        }
+    }
+}
+
+test "findMaximumIndependentSet 2" {
+    const gpa = std.testing.allocator;
+
+    // Example from the paper using measurements from figure 2(b) (which is
+    // subtly different to 2(a) and 2(c)...)
+    const m = 3;
+    const n = 2;
+    var beg = [n]usize{ 0, 2 };
+    var end = [n]usize{ 1, 2 };
+    var match = [m]usize{ std.math.maxInt(usize), std.math.maxInt(usize), std.math.maxInt(usize) };
+
+    var stack: std.Deque(usize) = undefined;
+    defer stack.deinit(gpa);
+    try findMaximumIndependentSet(gpa, &beg, &end, &match, &stack);
+
+    {
+        var stackIt = stack.iterator();
+        for ([_]usize{ 0, 1, 2, 2 }) |expected| {
+            if (stackIt.next()) |s| {
+                try std.testing.expectEqual(expected, s);
+            } else {
+                try std.testing.expect(false);
+            }
         }
     }
 }
