@@ -225,11 +225,11 @@ test "repeatRemoveAccessible" {
     try std.testing.expectEqual(43, repeatRemoveAccessible(&mutableGrid));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day4.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day4.txt", allocator, .limited(10 * 1024 * 1024));
     var grid = try parse(allocator, input);
     std.debug.print("part 1: {}\n", .{numRollsAccessible(grid)});
     std.debug.print("part 2: {}\n", .{repeatRemoveAccessible(&grid)});

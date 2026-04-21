@@ -195,16 +195,16 @@ test grandTotal2 {
     try std.testing.expectEqual(3263827, try grandTotal2(sample));
 }
 
-pub fn main() !void {
-    const startns = std.time.nanoTimestamp();
+pub fn main(init: std.process.Init) !void {
+    const startns = std.Io.Timestamp.now(init.io, .real).toNanoseconds();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day6.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day6.txt", allocator, .limited(10 * 1024 * 1024));
     const part1 = try grandTotal(allocator, input);
-    const part1endns = std.time.nanoTimestamp();
+    const part1endns = std.Io.Timestamp.now(init.io, .real).toNanoseconds();
     const part2 = try grandTotal2(input);
-    const part2endns = std.time.nanoTimestamp();
+    const part2endns = std.Io.Timestamp.now(init.io, .real).toNanoseconds();
     std.debug.print("part 1: {}\n", .{part1});
     std.debug.print("took {}ns\n", .{part1endns - startns});
     std.debug.print("part 2: {}\n", .{part2});

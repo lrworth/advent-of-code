@@ -140,11 +140,11 @@ test "numFreshIngredients" {
     try std.testing.expectEqual(14, try numFreshIngredients(std.testing.allocator, sampleAsDatabase));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day5.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day5.txt", allocator, .limited(10 * 1024 * 1024));
     const database = try parse(allocator, input);
     std.debug.print("part 1: {}\n", .{countFresh(database)});
     std.debug.print("part 2: {}\n", .{try numFreshIngredients(allocator, database)});

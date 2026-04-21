@@ -1,7 +1,7 @@
 const std = @import("std");
 
-pub fn main() !void {
-    const input = try std.fs.cwd().readFileAlloc(std.heap.page_allocator, "data/day1.txt", 10 * 1024 * 1024);
+pub fn main(init: std.process.Init) !void {
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day1.txt", std.heap.page_allocator, .limited(10 * 1024 * 1024));
     std.debug.print("Part 1: {}\n", .{try solve1(input)});
     std.debug.print("Part 2: {}\n", .{try solve2(input)});
 }

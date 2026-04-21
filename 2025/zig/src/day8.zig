@@ -37,7 +37,7 @@ const sampleAsVecs = &[_]Vec3{ .{ 162, 817, 812 }, .{ 57, 618, 57 }, .{ 906, 360
 const Vec3 = @Vector(3, i64);
 
 fn parse(gpa: Allocator, buffer: []const u8) ![]Vec3 {
-    var al: ArrayList(Vec3) = .{};
+    var al: ArrayList(Vec3) = .empty;
     defer al.deinit(gpa);
     var lineIt = mem.tokenizeScalar(u8, buffer, '\n');
     while (lineIt.next()) |line| {
@@ -166,11 +166,11 @@ fn u64LessThan(_: void, lhs: u64, rhs: u64) bool {
     return lhs < rhs;
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day8.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day8.txt", allocator, .limited(10 * 1024 * 1024));
     const vecs = try parse(allocator, input);
     defer allocator.free(vecs);
     const index_pairs = try indexPairsSortedByDistance(allocator, vecs);

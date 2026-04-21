@@ -95,12 +95,12 @@ test timelines {
     try std.testing.expectEqual(40, try timelines(std.testing.allocator, diagram));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     // const startns = std.time.nanoTimestamp();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day7.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day7.txt", allocator, .limited(10 * 1024 * 1024));
     const diagram = Diagram.init(input);
     const part1 = try beamSplittersHit(allocator, diagram);
     const part2 = try timelines(allocator, diagram);

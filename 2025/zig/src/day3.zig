@@ -27,11 +27,11 @@ fn freeBanks(gpa: std.mem.Allocator, banks: []Bank) void {
 var cursor: usize = undefined;
 
 fn parse(gpa: std.mem.Allocator, buffer: []const u8) ![]Bank {
-    var banks = std.ArrayList(Bank){};
+    var banks = std.ArrayList(Bank).empty;
     var bankInIt = std.mem.splitScalar(u8, buffer, '\n');
     while (bankInIt.next()) |bankIn| {
         if (bankIn.len > 0) {
-            var bank = std.ArrayList(Battery){};
+            var bank = std.ArrayList(Battery).empty;
             for (bankIn) |battery| {
                 try bank.append(gpa, battery - '0');
             }
@@ -92,11 +92,11 @@ test "totalJoltageOverriden" {
     try std.testing.expectEqual(3121910778619, totalJoltageOverriden(sampleAsBanks));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day3.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day3.txt", allocator, .limited(10 * 1024 * 1024));
     const banks = try parse(allocator, input);
     std.debug.print("part 1: {}\n", .{try totalJoltage(banks)});
     std.debug.print("part 2: {}\n", .{try totalJoltageOverriden(banks)});

@@ -30,7 +30,7 @@ const sampleAsVecs = &[_]Vec2{
 };
 
 fn parse(gpa: Allocator, buffer: []const u8) ![]Vec2 {
-    var al: ArrayList(Vec2) = .{};
+    var al: ArrayList(Vec2) = .empty;
     defer al.deinit(gpa);
     var lineIt = mem.tokenizeScalar(u8, buffer, '\n');
     while (lineIt.next()) |line| {
@@ -67,11 +67,11 @@ test "part 1 sample" {
     try testing.expectEqual(50, largestSquare(sampleAsVecs));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day9.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day9.txt", allocator, .limited(10 * 1024 * 1024));
     const vecs = try parse(allocator, input);
 
     const part1 = largestSquare(vecs);

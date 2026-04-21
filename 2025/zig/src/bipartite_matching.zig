@@ -2,7 +2,6 @@
 //! https://scispace.com/pdf/efficient-algorithms-for-finding-maximum-matchings-in-convex-411ieyldz5.pdf
 
 const std = @import("std");
-const deque = @import("./deque.zig");
 
 const Interval = struct { beg: usize, end: usize };
 const BipartiteGraphConvexOnA = struct {
@@ -172,8 +171,8 @@ pub fn maximumMatchingFast(beg: []usize, end: []usize, ordbeg: []usize, queue_bu
 
     var queue_alloc = std.heap.FixedBufferAllocator.init(@ptrCast(queue_buffer));
 
-    var queue = std.PriorityQueue(usize, void, compareFn.lessThan).init(queue_alloc.allocator(), {});
-    queue.ensureTotalCapacityPrecise(n) catch unreachable;
+    var queue = std.PriorityQueue(usize, void, compareFn.lessThan).empty;
+    queue.ensureTotalCapacityPrecise(queue_alloc.allocator(), n) catch unreachable;
     var nb: usize = 0;
     var ne: usize = 0;
 
@@ -183,16 +182,16 @@ pub fn maximumMatchingFast(beg: []usize, end: []usize, ordbeg: []usize, queue_bu
         // Find vertex to be matched to i
         while (nb < n and beg[ordbeg[nb]] == i) {
             // std.debug.print("nb = {}\n", .{nb});
-            queue.add(ordbeg[nb]) catch unreachable;
+            queue.push(queue_alloc.allocator(), ordbeg[nb]) catch unreachable;
             // std.debug.print("queue = {any}\n", .{queue.items});
             nb += 1;
         }
-        match[i] = queue.removeOrNull();
+        match[i] = queue.pop();
         // std.debug.print("queue = {any}\n", .{queue.items});
         while (ne < n and end[ne] == i) {
             // std.debug.print("ne = {}\n", .{ne});
             if (std.mem.indexOfScalar(usize, queue.items, ne)) |ne_i| {
-                _ = queue.removeIndex(ne_i);
+                _ = queue.popIndex(ne_i);
             }
             // std.debug.print("queue = {any}\n", .{queue.items});
             ne += 1;
@@ -823,7 +822,7 @@ pub fn findMaximumMatchingDoublyConvexBipartite(gpa: std.mem.Allocator, beg: []c
     std.debug.assert(isBegIncreasingEndNonincreasing(beg, end));
     const m = match.len;
 
-    var deq = deque.Deque(usize).empty;
+    var deq = std.Deque(usize).empty;
     defer deq.deinit(gpa);
 
     var j: usize = 0;
@@ -1046,15 +1045,15 @@ test "findMaximumMatchingDoublyConvexBipartite extensionally equal to maximumMat
 }
 
 // TODO: the stack return pointer thing is silly, and so is allocating a queue.
-pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, match: []const usize, stack: *deque.Deque(usize)) !void {
+pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end: []const usize, match: []const usize, stack: *std.Deque(usize)) !void {
     const n = beg.len;
     std.debug.assert(end.len == n);
     std.debug.assert(isNonDecreasing(beg));
     // const m = match.len;
 
     // TODO find a fast way to construct this.
-    @breakpoint();
-    var queue = deque.Deque(usize).empty;
+    // @breakpoint();
+    var queue = std.Deque(usize).empty;
     defer queue.deinit(gpa);
     for (0..n) |j| {
         if (std.mem.indexOfScalar(usize, match, j)) |_| {} else {
@@ -1065,7 +1064,7 @@ pub fn findMaximumIndependentSet(gpa: std.mem.Allocator, beg: []const usize, end
     stack.* = .empty;
     try stack.pushBack(gpa, std.math.maxInt(usize));
 
-    @breakpoint();
+    // @breakpoint();
     while (queue.popFront()) |j| {
         // Find vertices reachable from first(queue).
         if (stack.back().? == std.math.maxInt(usize) or end[j] > stack.back().?) {
@@ -1134,7 +1133,7 @@ test findMaximumIndependentSet {
 
     try findMaximumMatchingDoublyConvexBipartite(gpa, &beg, &end, &y, &match);
 
-    var stack: deque.Deque(usize) = undefined;
+    var stack: std.Deque(usize) = undefined;
     defer stack.deinit(gpa);
     try findMaximumIndependentSet(gpa, &beg, &end, &match, &stack);
 

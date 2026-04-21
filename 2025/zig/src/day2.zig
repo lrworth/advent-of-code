@@ -4,7 +4,7 @@ const Range = struct { firstId: u64, lastId: u64 };
 const Ranges = []const Range;
 
 fn parse(gpa: std.mem.Allocator, buffer: []const u8) !Ranges {
-    var result = std.ArrayList(Range){};
+    var result = std.ArrayList(Range).empty;
     errdefer result.deinit(gpa);
     const trimmed = std.mem.trim(u8, buffer, &.{'\n'});
     var commaIt = std.mem.splitScalar(u8, trimmed, ',');
@@ -214,12 +214,12 @@ test "sumInvalidIdsAny" {
     try std.testing.expectEqual(4174379265, sumInvalidIdsAny(std.testing.allocator, sampleAsRanges));
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const input = try std.fs.cwd().readFileAlloc(allocator, "data/day2.txt", 10 * 1024 * 1024);
+    const input = try std.Io.Dir.cwd().readFileAlloc(init.io, "data/day2.txt", allocator, .limited(10 * 1024 * 1024));
     const ranges = try parse(allocator, input);
     std.debug.print("part 1: {}\n", .{sumInvalidIds(ranges)});
     std.debug.print("part 2: {}\n", .{try sumInvalidIdsAny(allocator, ranges)});
